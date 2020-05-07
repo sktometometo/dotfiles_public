@@ -1,0 +1,14 @@
+#
+# bashrc main
+#
+
+DIR_BASHRC_D=$HOME/.bashrc.d/
+
+if [ ! -e $DIR_BASHRC_D ]; then
+    mkdir -p $DIR_BASHRC_D
+fi
+
+for bashrc in $(ls $DIR_BASHRC_D); 
+do
+    source $DIR_BASHRC_D/$bashrc
+done

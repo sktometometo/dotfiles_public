@@ -1,0 +1,46 @@
+# ~/.bashrc: executed by bash(1) for non-login shells.
+
+# pyenv install directory
+PYENV_ROOT="$HOME/.pyenv"
+# pyenv-virtualenv install directory
+PYENV_VIRTUALENV_ROOT="$PYENV_ROOT/plugins/pyenv-virtualenv"
+
+#
+# for pyenv
+#
+function pyenv-install () {
+    git clone https://github.com/pyenv/pyenv.git $1
+}
+
+function pyenv-initialize () {
+    export PYENV_ROOT
+    export PATH="$PYENV_ROOT/bin:$PATH"
+    if command -v pyenv 1>/dev/null 2>&1; then
+        eval "$(pyenv init -)"
+    fi
+}
+
+if [ -e $PYENV_ROOT ]; then
+    pyenv-initialize
+else
+    pyenv-install $PYENV_ROOT
+    pyenv-initialize
+fi
+
+#
+# for pyenv-virtualenv
+#
+function pyenv-virtualenv-install () {
+    git clone https://github.com/pyenv/pyenv-virtualenv.git $1
+}
+
+function pyenv-virtualenv-initialize () {
+    eval "$(pyenv virtualenv-init -)"
+}
+
+if [ -e $PYENV_ROOT/plugins/pyenv-virtualenv ]; then
+    pyenv-virtualenv-initialize $PYENV_VIRTUALENV_ROOT
+else
+    pyenv-virtualenv-install $PYENV_VIRTUALENV_ROOT
+    pyenv-virtualenv-initialize $PYENV_VIRTUALENV_ROOT
+fi

@@ -1,0 +1,6 @@
+# ~/.bashrc: executed by bash(1) for non-login shells.
+
+# prompt configuration
+[[ "$PS1" ]] && /usr/games/fortune my | \
+    /usr/games/cowsay \ 
+        -f $(ls /usr/share/cowsay/cows/ | sort -R | head --lines=1 ) -n

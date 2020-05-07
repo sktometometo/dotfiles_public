@@ -1,0 +1,6 @@
+# ~/.bashrc: executed by bash(1) for non-login shells.
+
+# aliases
+alias pbcopy='cat > /dev/clipboard'
+alias pbpaste='cat /dev/clipboard'
+alias open='cygstart'

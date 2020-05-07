@@ -1,0 +1,12 @@
+# ~/.bashrc: executed by bash(1) for non-login shells.
+
+#aliases
+alias pbcopy='xsel --clipboard --input'
+alias pbpaste='xsel --clipboard --output'
+alias open='xdg-open'
+
+#git
+alias gitlog='git log --graph --all --format="%x09%an%x09%h %d %s"'
+
+#man in japanese
+export MANPATH=/opt/ros/indigo/share/man:/usr/local/man:/usr/local/share/man:/usr/share/man:/usr/share/man:/usr/share/man/ja

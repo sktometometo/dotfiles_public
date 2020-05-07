@@ -1,0 +1,48 @@
+# ~/.bashrc: executed by bash(1) for non-login shells.
+
+# ROS workspaces directory
+BASHRC_ROS_WORKSPACES=$HOME/ros
+
+# Source setup.bash
+if [ $(lsb_release -sr) == "14.04" ]; then
+    source /opt/ros/indigo/setup.bash
+elif [ $(lsb_release -sr ) == "16.04" ]; then
+    source /opt/ros/kinetic/setup.bash
+elif [ $(lsb_release -sr ) == "18.04" ]; then
+    source /opt/ros/melodic/setup.bash
+else
+    echo "[bashrc_ROS][ERROR] Unknown ubuntu version, cannot source setup.bash for ROS"
+fi
+
+# ROSCONSOLE configuration
+export ROSCONSOLE_FORMAT='[${severity}] [WallTime: ${time}] [node:${node}] [func:${function}]: ${message}'
+
+# ROS workspace configuration
+echo "[bashrc_ROS][INFO] please do set_workspace to checkout ros workspace"
+export workspacename=''
+function set_workspace() {
+    TEMP_WORKSPACES=$DIR_ROS_WORKSPACE/*
+    TEMP_dirarray=()
+    for filepath in $TEMP_WORKSPACES; do
+        if [ -d $filepath ]; then
+            TEMP_dirarray+=("$filepath")
+        fi
+    done
+
+    index=0
+    for i in "${TEMP_dirarray[@]}"; do
+        echo "  ${index} : "$i
+        index=`expr $index + 1`
+    done
+
+    read -p "  Input workspace number. > " number
+    workspacename=${TEMP_dirarray[$number]}
+
+    echo "[bashrc_ROS][INFO] source ${workspacename}/devel/setup.bash"
+    source $workspacename"/devel/setup.bash"
+
+    export workspacename
+}
+function cd_workspace() {
+    cd $workspacename
+}

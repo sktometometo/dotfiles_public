@@ -1,0 +1,5 @@
+# ~/.bashrc: executed by bash(1) for non-login shells.
+
+# alias
+alias irteusglwrap='rlwrap -c -b="" irteusgl'
+alias roseuswrap='rlwrap -c -b="" roseus'

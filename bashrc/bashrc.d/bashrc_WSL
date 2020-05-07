@@ -1,0 +1,9 @@
+# ~/.bashrc: executed by bash(1) for non-login shells.
+
+# aliases
+alias pbcopy='win32yank.exe -i'
+alias pbpaste='win32yank.exe -o'
+
+# configuration for GUI
+export DISPLAY=localhost:0.0
+LIBGL_ALWAYS_INDIRECT=1

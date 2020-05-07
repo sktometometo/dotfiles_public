@@ -1,0 +1,23 @@
+# ~/.bashrc: executed by bash(1) for non-login shells.
+
+# compilation commands for openblas
+function g++ob() {
+    g++ $@ -I/opt/OpenBLAS/include -L/opt/OpenBLAS/lib -lclas
+}
+
+# compilation commands for opencv apps
+function gcvgcv() {
+    g++ `pkg-config --cflags opencv` $@ `pkg-config --libs opencv` -lglut -lGL -lGLU -ljpeg -lm -lpthread
+}
+function gcvc() {
+    gcc `pkg-config --cflags opencv` $@ `pkg-config --libs opencv` -lglut -lGL -lGLU -ljpeg -lm -lpthread
+}
+
+# compilation commands for opengl apps
+function gccgl() {
+    gcc $@ -lglut -lGLU -lGL -lGLEW $(pkg-config --cflags glew)
+}
+
+function g++gl() {
+    g++ $@ -lglut -lGLU -lGL -lGLEW $(pkg-config --cflags glew)
+}
