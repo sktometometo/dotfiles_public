@@ -1,0 +1,10 @@
+#
+#
+#
+
+function asciidoctor-pdf-docker()
+{
+    id=$(docker run -d -it -v $(pwd):/documents uochan/docker-asciidoctor-jp)
+    docker exec -it $id asciidoctor-pdf $1 -r asciidoctor-pdf-cjk-kai_gen_gothic -a pdf-style=KaiGenGothicJP
+    docker stop $id
+}
