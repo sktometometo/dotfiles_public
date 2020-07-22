@@ -24,7 +24,7 @@ if "${BUILD}"; then
     fi
 
     ## install from source
-    if [ -e $SRCDIR ];then
+    if [ $SRCDIR ];then
         cd $SRCDIR
         sudo make uninstall
         git pull
@@ -50,11 +50,11 @@ fi
 # Install configuration files
 #
 ## create symbolic link of tmux.conf
-if [ -e $HOME/.tmux.conf ]; then
+if [ $HOME/.tmux.conf ]; then
     rm $HOME/.tmux.conf
 fi
 ln -s $FILEDIR/tmux.conf     $HOME/.tmux.conf
 ## make log directory
-if [ ! -e $HOME/.tmux/log ]; then
+if [ ! $HOME/.tmux/log ]; then
     mkdir -p $HOME/.tmux/log
 fi

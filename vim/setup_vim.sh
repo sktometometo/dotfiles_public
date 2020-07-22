@@ -82,10 +82,10 @@ fi
 #
 # Install configuration files
 #
-if [ -e $HOME/.vimrc ]; then
+if [ $HOME/.vimrc ]; then
     rm -rf $HOME/.vimrc
 fi
-if [ -e $HOME/.vim ]; then
+if [ $HOME/.vim ]; then
     rm -rf $HOME/.vim
 fi
 ln -s $FILEDIR/vimrc $HOME/.vimrc
