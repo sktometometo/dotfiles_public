@@ -16,4 +16,6 @@ if [ ! -e $SSHCONFIGDIR/configs ]; then
 fi
 ## config link
 ## TODO: Opensshのバージョンに応じてシンボリックリンクを変える
-ln -s $FILEDIR/config $SSHCONFIGDIR/config
+if [ ! -e $SSHCONFIGDIR/config ]; then
+    ln -s $FILEDIR/config $SSHCONFIGDIR/config
+fi
