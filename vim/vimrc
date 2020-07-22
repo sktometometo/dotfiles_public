@@ -1,0 +1,135 @@
+"""""""""""
+" plugins "
+"""""""""""
+"let g:python3_host_prog = '/usr/bin/python3'
+
+" プラグインが実際にインストールされるディレクトリ
+let s:dein_dir = expand('$HOME/.vim/bundles/dein')
+" dein.vim本体
+let s:dein_repo_dir = s:dein_dir . '/repos/github.com/Shougo/dein.vim'
+
+" dein.vimがなければgithubからDownload
+if &runtimepath !~# '/dein.vim'
+    if !isdirectory(s:dein_repo_dir)
+        execute '!git clone https://github.com/Shougo/dein.vim' s:dein_repo_dir
+    endif
+    execute 'set runtimepath^='. fnamemodify(s:dein_repo_dir, ':p')
+endif
+
+" 設定開始
+if dein#load_state(s:dein_dir)
+    call dein#begin(s:dein_dir)
+
+    " プラグインリストを収めた TOML ファイル
+    " 予めTOMLファイル(後述)を用意しておく。
+    let g:rc_dir    = expand('$HOME/.vim/rc')
+    let s:toml      = g:rc_dir . '/dein.toml'
+    let s:lazy_toml = g:rc_dir . '/dein_lazy.toml'
+
+    " TOMLを読込み、キャッシュしておく
+    call dein#load_toml(s:toml,      {'lazy': 0})
+    call dein#load_toml(s:lazy_toml, {'lazy': 1})
+
+    " 設定終了
+    call dein#end()
+    call dein#save_state()
+endif
+
+if dein#check_install()
+    call dein#install()
+endif
+
+
+
+""""""""""""""""""""""
+" ファイルごとの設定 "
+""""""""""""""""""""""
+augroup MyXML
+  autocmd!
+  autocmd Filetype xml inoremap <buffer> </ </<C-x><C-o>
+augroup END
+
+
+
+""""""""""""
+" 基本設定 "
+""""""""""""
+"
+" ファイル
+"
+" 文字エンコーディング設定
+set encoding=utf-8
+"swapファイルを作らない
+set noswapfile
+"バックアップを作らない
+set nowritebackup
+" filetype
+filetype plugin indent on
+autocmd BufRead,BufNewFile *.l set filetype=lisp
+autocmd BufRead,BufNewFile *.launch set filetype=xml
+
+"
+" 編集
+"
+" vi互換を切る
+if &compatible
+    set nocompatible
+endif
+" オートインデント
+set autoindent
+set smartindent
+" タブを半角スペースに展開
+set expandtab
+set shiftwidth=4
+set softtabstop=4
+" 文字がないところでもカーソル移動を可能にする
+set virtualedit=all
+" バックスペース
+set backspace=indent,eol,start
+" クリップボード
+set clipboard=unnamedplus,autoselect
+" 補完候補
+set wildmenu
+
+"
+" 表示
+"
+" 括弧の対応
+set showmatch
+set matchtime=1
+" シンタックスハイライトを有効に
+syntax enable
+" 行番号を有効に
+set number
+" カーソル位置の表示
+set ruler
+" カーソル行をハイライト
+set cursorline
+" 不可視文字の表示
+set list
+set listchars=tab:»-,trail:-,eol:↲,extends:»,precedes:«,nbsp:%
+
+"
+" 検索
+"
+" 検索結果をハイライト
+set hlsearch
+" インクリメンタルサーチを有効化
+set smartcase
+" 検索時の大文字小文字の区別をなくす
+set ignorecase
+" 検索時大文字が入ったときのみignorecaseを無効
+set smartcase
+
+
+
+"""""""""""""""
+" colorscheme "
+"""""""""""""""
+" 256色対応
+set t_Co=256
+" colorsheme
+colorscheme morning
+
+
+

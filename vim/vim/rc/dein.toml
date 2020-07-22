@@ -1,0 +1,40 @@
+# -------------------------------------------------------
+#
+# Required:
+#
+# -------------------------------------------------------
+[[plugins]]
+repo = 'Shougo/dein.vim'
+
+# Status bar
+[[plugins]]
+repo    = 'vim-airline/vim-airline'
+depends = ['vim-airline-themes']
+hook_source = '''
+    let g:airline#extensions#tabline#enabled = 1
+    let g:airline#extensions#tabline#left_sep = ' '
+    let g:airline#extensions#tabline#left_alt_sep = '|'
+    let g:airline#extensions#tabline#formatter = 'default'
+'''
+[[plugins]]
+repo = 'vim-airline/vim-airline-themes'
+
+# Color Scheme
+[[plugins]]
+repo = 'tomasr/molokai'
+
+# Linting Engine
+[[plugins]]
+repo = 'w0rp/ale'
+
+# United UI
+[[plugins]]
+repo = 'Shougo/unite.vim'
+
+# For NVIM python compatibility
+[[plugins]]
+repo = 'roxma/vim-hug-neovim-rpc'
+
+[[plugins]]
+repo = 'roxma/nvim-yarp'
+
