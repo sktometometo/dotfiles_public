@@ -49,7 +49,7 @@ fi
 #
 # config
 #
-if [ -e $HOME/.emacs.d ]; then
+if [ $HOME/.emacs.d ]; then
     rm -rf $HOME/.emacs.d
 fi
 
