@@ -47,8 +47,8 @@ hook_add = '''
     let g:UltiSnipsJumpBackwardTrigger="<c-z>"
 '''
 
-[[plugins]]
-repo = 'honza/vim-snippets'
+#[[plugins]]
+#repo = 'honza/vim-snippets'
 
 [[plugins]]
 repo = 'Shougo/denite.nvim'
