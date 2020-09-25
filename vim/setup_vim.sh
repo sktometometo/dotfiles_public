@@ -90,4 +90,3 @@ if [ $HOME/.vim ]; then
 fi
 ln -s $FILEDIR/vimrc $HOME/.vimrc
 ln -s $FILEDIR/vim   $HOME/.vim
-vim +NeoBundleInstall +qall
