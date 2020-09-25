@@ -1,8 +1,10 @@
 [[plugins]]
 repo = 'roxma/nvim-yarp'
+if = "!has('nvim')"
 
 [[plugins]]
 repo = 'roxma/vim-hug-neovim-rpc'
+if = "!has('nvim')"
 
 [[plugins]]
 repo = 'wsdjeg/dein-ui.vim'
@@ -30,14 +32,16 @@ hook_add = '''
     " let g:deoplete#sources#jedi#python_path = '/usr/local/lib/python3.6'
 '''
 
-[[plugins]]
-repo = 'deoplete-plugins/deoplete-clang'
-on_ft = ['c', 'cpp', 'cmake']
-depends = ['deoplete.nvim']
-hook_add = '''
-    let g:deoplete#sources#clang#libclang_path = '/usr/lib/llvm-6.0/lib/libclang.so'
-    let g:deoplete#sources#clang#clang_header = '/usr/include/clang'
-'''
+#[[plugins]]
+#repo = 'deoplete-plugins/deoplete-clang'
+#on_ft = ['c', 'cpp', 'cmake']
+#depends = ['deoplete.nvim']
+#hook_add = '''
+#    let g:deoplete#sources#clang#libclang_path = '/usr/lib/llvm-6.0/lib/'
+#    let g:deoplete#sources#clang#clang_header = '/usr/include/clang/'
+#    let g:deoplete#sources#clang#sort_algo = 'priority'
+#    let g:deoplete#sources#clang#clang_complete_database="./build/"
+#'''
 
 [[plugins]]
 repo = 'SirVer/ultisnips'
