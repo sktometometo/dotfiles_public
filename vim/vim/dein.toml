@@ -1,0 +1,115 @@
+[[plugins]]
+repo = 'roxma/nvim-yarp'
+
+[[plugins]]
+repo = 'roxma/vim-hug-neovim-rpc'
+
+[[plugins]]
+repo = 'wsdjeg/dein-ui.vim'
+
+[[plugins]]
+repo = 'Shougo/deoplete.nvim'
+hook_add = '''
+    let g:deoplete#enable_at_startup = 1
+    " call deoplete#enable()
+    " call deoplete#custom#option({
+    " \   'auto_complete_delay': 200,
+    " \   'smart_case': v:true,
+    " \   })
+'''
+
+[[plugins]]
+repo = 'Shougo/neco-vim'
+depends = ['deoplete.nvim']
+
+[[plugins]]
+repo = 'deoplete-plugins/deoplete-jedi'
+on_ft = 'python'
+depends = ['deoplete.nvim']
+hook_add = '''
+    " let g:deoplete#sources#jedi#python_path = '/usr/local/lib/python3.6'
+'''
+
+[[plugins]]
+repo = 'deoplete-plugins/deoplete-clang'
+on_ft = ['c', 'cpp', 'cmake']
+depends = ['deoplete.nvim']
+hook_add = '''
+    let g:deoplete#sources#clang#libclang_path = '/usr/lib/llvm-6.0/lib/libclang.so'
+    let g:deoplete#sources#clang#clang_header = '/usr/include/clang'
+'''
+
+[[plugins]]
+repo = 'SirVer/ultisnips'
+hook_add = '''
+    let g:UltiSnipsExpandTrigger="<tab>"
+    let g:UltiSnipsJumpForwardTrigger="<c-b>"
+    let g:UltiSnipsJumpBackwardTrigger="<c-z>"
+'''
+
+[[plugins]]
+repo = 'honza/vim-snippets'
+
+[[plugins]]
+repo = 'Shougo/denite.nvim'
+hook_add = '''
+    autocmd FileType denite call s:denite_my_settings()
+    function! s:denite_my_settings() abort
+        nnoremap <silent><buffer><expr> <CR>
+        \ denite#do_map('do_action')
+        nnoremap <silent><buffer><expr> d
+        \ denite#do_map('do_action', 'delete')
+        nnoremap <silent><buffer><expr> p
+        \ denite#do_map('do_action', 'preview')
+        nnoremap <silent><buffer><expr> q
+        \ denite#do_map('quit')
+        nnoremap <silent><buffer><expr> i
+        \ denite#do_map('open_filter_buffer')
+        nnoremap <silent><buffer><expr> <Space>
+        \ denite#do_map('toggle_select').'j'
+    endfunction
+'''
+
+[[plugins]]
+repo = 'tpope/vim-fugitive'
+
+[[plugins]]
+repo = 'vim-airline/vim-airline-themes'
+hook_add = '''
+    let g:airline_theme='simple'
+'''
+
+[[plugins]]
+repo = 'vim-airline/vim-airline'
+depends = ['vim-airline-themes', 'fugitive.vim']
+hook_add = '''
+    let g:airline#extensions#tabline#enabled = 1
+    let g:airline#extensions#tabline#formatter = 'unique_tail_improved'
+
+    " C-p や C-n でバッファの切り替えを行い, タブ移動を可能にする
+    nmap <C-p> <Plug>AirlineSelectPrevTab
+    nmap <C-n> <Plug>AirlineSelectNextTab
+'''
+
+[[plugins]]
+repo = 'lervag/vimtex'
+on_ft = ['tex']
+
+[[plugins]]
+repo = 'pboettch/vim-cmake-syntax'
+on_ft = ['cmake']
+
+[[plugins]]
+repo = 'asciidoc/vim-asciidoc'
+on_ft = ['asciidoc']
+
+[[plugins]]
+repo = 'sudar/vim-arduino-syntax'
+on_ft = ['arduino']
+
+[[plugins]]
+repo = 'cespare/vim-toml'
+on_ft = ['toml']
+
+[[plugins]]
+repo = 'taketwo/vim-ros'
