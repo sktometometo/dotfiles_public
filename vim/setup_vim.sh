@@ -80,13 +80,27 @@ fi
 
 
 #
-# Install configuration files
+# Install required packages for vim8
 #
-if [ $HOME/.vimrc ]; then
+pip3 install --user pynvim
+
+
+
+#
+# Install configuration files for vim8
+#
+if [ -e $HOME/.vimrc ]; then
     rm -rf $HOME/.vimrc
 fi
-if [ $HOME/.vim ]; then
+if [ -e $HOME/.vim ]; then
     rm -rf $HOME/.vim
+fi
+if [ -e $HOME/.config/nvim/init.vim ]; then
+    rm -rf $HOME/.config/nvim/init.vim
+fi
+if [ ! -e $HOME/.config/nvim ] ;then
+    mkdir -p $HOME/.config/nvim
 fi
 ln -s $FILEDIR/vimrc $HOME/.vimrc
 ln -s $FILEDIR/vim   $HOME/.vim
+ln -s $FILEDIR/init.vim $HOME/.config/nvim/init.vim
