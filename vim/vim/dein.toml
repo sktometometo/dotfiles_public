@@ -115,5 +115,5 @@ on_ft = ['arduino']
 repo = 'cespare/vim-toml'
 on_ft = ['toml']
 
-[[plugins]]
-repo = 'taketwo/vim-ros'
+#[[plugins]]
+#repo = 'taketwo/vim-ros'
