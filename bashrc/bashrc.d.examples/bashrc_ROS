@@ -6,10 +6,16 @@ ROS_WORKSPACES=$HOME/ros
 # Source setup.bash
 if [ $(lsb_release -sr) == "14.04" ]; then
     source /opt/ros/indigo/setup.bash
+    echo "[bashrc_ROS][INFO] loaded /opt/ros/indigo/setup.bash"
 elif [ $(lsb_release -sr ) == "16.04" ]; then
     source /opt/ros/kinetic/setup.bash
+    echo "[bashrc_ROS][INFO] loaded /opt/ros/kinetic/setup.bash"
 elif [ $(lsb_release -sr ) == "18.04" ]; then
     source /opt/ros/melodic/setup.bash
+    echo "[bashrc_ROS][INFO] loaded /opt/ros/melodic/setup.bash"
+elif [ $(lsb_release -sr ) == "20.04" ]; then
+    source /opt/ros/melodic/setup.bash
+    echo "[bashrc_ROS][INFO] loaded /opt/ros/noetic/setup.bash"
 else
     echo "[bashrc_ROS][ERROR] Unknown ubuntu version, cannot source setup.bash for ROS"
 fi
