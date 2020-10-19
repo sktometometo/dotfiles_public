@@ -64,12 +64,7 @@
 (setq read-file-name-completion-ignore-case t)
 
 ;;
-;; ~/.emacs.el
-(add-to-list 'load-path "~/.emacs.d/slime")
-(add-to-list 'load-path "~/.emacs.d/euslime")
-(add-to-list 'load-path "~/.emacs.d/slime-repl-ansi-color")
-(require 'slime-autoloads)
-(require 'euslime)
-(setq inferior-lisp-program "sbcl")
+(add-to-list 'load-path "/opt/ros/melodic/share/euslime")
+(require 'euslime-config)
 (setq inferior-euslisp-program "roseus")
-(slime-setup '(slime-fancy slime-repl-ansi-color slime-banner))
+(slime-setup '(slime-fancy slime-banner slime-repl-ansi-color))

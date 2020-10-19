@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 #
 # Directory
@@ -49,18 +49,23 @@ fi
 #
 # config
 #
-if [ $HOME/.emacs.d ]; then
-    rm -rf $HOME/.emacs.d
+if [ ! -e $HOME/.emacs.d ]; then
+    mkdir $HOME/.emacs.d
+    ln -s $FILEDIR/init.el $HOME/.emacs.d/init.el
+else
+    if [[ -L "$HOME/.emacs.d/init.el" ]]; then
+        rm $HOME/.emacs.d/init.el
+    else
+        mv $HOME/.emacs.d/init.el $HOME/.emacs.d/init.el.bak
+    fi
+    ln -s $FILEDIR/init.el $HOME/.emacs.d/init.el
 fi
-
-mkdir $HOME/.emacs.d
-ln -s $FILEDIR/init.el $HOME/.emacs.d/init.el
 
 #
 # euslime
 #
-cd $HOME/.emacs.d
-git clone https://github.com/Affonso-Gui/euslime.git
-git clone https://github.com/slime/slime.git
-git clone https://github.com/deadtrickster/slime-repl-ansi-color.git
-sudo pip install -U -e euslime
+if [ $(lsb_release -sr) == "18.04" ]; then
+    sudo apt install ros-melodic-euslime
+else
+    echo "euslime does not support your environment"
+fi
