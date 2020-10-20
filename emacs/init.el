@@ -49,6 +49,12 @@
 ;; C-kで行全体を削除する
 (setq kill-whole-line t)
 
+
+;;
+;; Color Theme
+;;
+(load-theme 'adwaita t)
+
 ;;
 ;; definition of new key prefix
 ;;
