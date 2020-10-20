@@ -127,5 +127,7 @@ augroup END
 """""""""""""""
 " 256色対応
 set t_Co=256
+" Truecolor
+set termguicolors
 " colorsheme
 colorscheme morning
