@@ -27,6 +27,7 @@ export ROSCONSOLE_FORMAT='[${severity}] [WallTime: ${time}] [node:${node}] [func
 echo "[bashrc_ROS][INFO] please do set_workspace to checkout ros workspace"
 export workspacename=''
 function set_workspace() {
+
     TEMP_WORKSPACES=$ROS_WORKSPACES/*
     TEMP_dirarray=()
     for filepath in $TEMP_WORKSPACES; do
@@ -35,13 +36,16 @@ function set_workspace() {
         fi
     done
 
-    index=0
-    for i in "${TEMP_dirarray[@]}"; do
-        echo "  ${index} : "$i
-        index=`expr $index + 1`
-    done
-
-    read -p "  Input workspace number. > " number
+    if [ $# -ne 1 ]; then
+        index=0
+        for i in "${TEMP_dirarray[@]}"; do
+            echo "  ${index} : "$i
+            index=`expr $index + 1`
+        done
+        read -p "  Input workspace number. > " number
+    else
+        number=$1
+    fi
     workspacename=${TEMP_dirarray[$number]}
 
     echo "[bashrc_ROS][INFO] source ${workspacename}/devel/setup.bash"
@@ -49,6 +53,7 @@ function set_workspace() {
 
     export workspacename
 }
+
 function cd_workspace() {
     cd $workspacename
 }
