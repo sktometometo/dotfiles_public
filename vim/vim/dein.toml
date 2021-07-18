@@ -10,6 +10,9 @@ if = "!has('nvim')"
 repo = 'wsdjeg/dein-ui.vim'
 
 [[plugins]]
+repo = 'Chiel92/vim-autoformat'
+
+[[plugins]]
 repo = 'Shougo/deoplete.nvim'
 hook_add = '''
     let g:deoplete#enable_at_startup = 1
@@ -42,17 +45,6 @@ hook_add = '''
 #    let g:deoplete#sources#clang#sort_algo = 'priority'
 #    let g:deoplete#sources#clang#clang_complete_database="./build/"
 #'''
-
-[[plugins]]
-repo = 'SirVer/ultisnips'
-hook_add = '''
-    let g:UltiSnipsExpandTrigger="<tab>"
-    let g:UltiSnipsJumpForwardTrigger="<c-b>"
-    let g:UltiSnipsJumpBackwardTrigger="<c-z>"
-'''
-
-#[[plugins]]
-#repo = 'honza/vim-snippets'
 
 [[plugins]]
 repo = 'Shougo/denite.nvim'
@@ -119,6 +111,13 @@ on_ft = ['arduino']
 [[plugins]]
 repo = 'cespare/vim-toml'
 on_ft = ['toml']
+
+[[plugins]]
+repo = 'rust-lang/rust.vim'
+on_ft = ['rust','toml']
+hook_add = '''
+let g:rustfmt_autosave = 1
+'''
 
 #[[plugins]]
 #repo = 'taketwo/vim-ros'
