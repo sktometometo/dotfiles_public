@@ -8,7 +8,7 @@ SRCDIR="$HOME/Sources/vim" # source のクローン先
 DSTDIR="" # インストール先 空の場合はデフォルト
 
 # Options
-readonly BUILD=false
+readonly BUILD=true
 
 #
 # Install vim from source
