@@ -119,22 +119,22 @@ hook_add = '''
 let g:rustfmt_autosave = 1
 '''
 
-[[plugins]]
-repo = 'scrooloose/syntastic'
-on_ft = ['python']
-hook_add = '''
-set statusline+=%#warningmsg#
-set statusline+=%{SyntasticStatuslineFlag()}
-set statusline+=%*
-
-let g:syntastic_always_populate_loc_list = 1
-let g:syntastic_enable_signs = 1
-let g:syntastic_auto_loc_list = 1
-let g:syntastic_check_on_open = 1
-let g:syntastic_check_on_wq = 0
-
-let g:syntastic_python_checker = ['pep8']
-'''
+#[[plugins]]
+#repo = 'scrooloose/syntastic'
+#on_ft = ['python']
+#hook_add = '''
+#set statusline+=%#warningmsg#
+#set statusline+=%{SyntasticStatuslineFlag()}
+#set statusline+=%*
+#
+#let g:syntastic_always_populate_loc_list = 1
+#let g:syntastic_enable_signs = 1
+#let g:syntastic_auto_loc_list = 1
+#let g:syntastic_check_on_open = 1
+#let g:syntastic_check_on_wq = 0
+#
+#let g:syntastic_python_checker = ['pep8']
+#'''
 
 #[[plugins]]
 #repo = 'taketwo/vim-ros'
