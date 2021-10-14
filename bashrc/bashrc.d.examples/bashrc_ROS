@@ -2,20 +2,20 @@
 
 # ROS workspaces directory
 ROS_WORKSPACES=$HOME/ros
+ROS2_WORKSPACES=$HOME/ros2
 
+base_setup_script_ROS1=""
+base_setup_script_ROS2=""
 # Source setup.bash
 if [ $(lsb_release -sr) == "14.04" ]; then
-    source /opt/ros/indigo/setup.bash
-    echo "[bashrc_ROS][INFO] loaded /opt/ros/indigo/setup.bash"
+    base_setup_script_ROS1=/opt/ros/indigo/setup.bash
 elif [ $(lsb_release -sr ) == "16.04" ]; then
-    source /opt/ros/kinetic/setup.bash
-    echo "[bashrc_ROS][INFO] loaded /opt/ros/kinetic/setup.bash"
+    base_setup_script_ROS1=/opt/ros/kinetic/setup.bash
 elif [ $(lsb_release -sr ) == "18.04" ]; then
-    source /opt/ros/melodic/setup.bash
-    echo "[bashrc_ROS][INFO] loaded /opt/ros/melodic/setup.bash"
+    base_setup_script_ROS1=/opt/ros/melodic/setup.bash
 elif [ $(lsb_release -sr ) == "20.04" ]; then
-    source /opt/ros/noetic/setup.bash
-    echo "[bashrc_ROS][INFO] loaded /opt/ros/noetic/setup.bash"
+    base_setup_script_ROS1=/opt/ros/noetic/setup.bash
+    base_setup_script_ROS2=/opt/ros/foxy/setup.bash
 else
     echo "[bashrc_ROS][ERROR] Unknown ubuntu version, cannot source setup.bash for ROS"
 fi
@@ -23,12 +23,36 @@ fi
 # ROSCONSOLE configuration
 export ROSCONSOLE_FORMAT='[${severity}] [WallTime: ${time}] [node:${node}] [func:${function}]: ${message}'
 
+#
+function setup_ros1() {
+    if [[ -e $base_setup_script_ROS1 ]]; then
+        source $base_setup_script_ROS1
+        echo "[bashrc_ROS][INFO] loaded $base_setup_script_ROS1"
+    fi
+}
+
+function setup_ros2() {
+    if [[ -e $base_setup_script_ROS2 ]]; then
+        source $base_setup_script_ROS2
+        echo "[bashrc_ROS][INFO] loaded $base_setup_script_ROS2"
+    fi
+}
+
 # ROS workspace configuration
 echo "[bashrc_ROS][INFO] please do set_workspace to checkout ros workspace"
 export workspacename=''
 function set_workspace() {
 
-    TEMP_WORKSPACES=$ROS_WORKSPACES/*
+    if [ -z "$ROS_VERSION" ]; then
+        echo "[bashrc_ROS][ERROR] please setup ros1 or ros2 first."
+        return 0
+    fi
+
+    if [[ $ROS_VERSION == "1" ]]; then
+        TEMP_WORKSPACES=$ROS_WORKSPACES/*
+    elif [[ $ROS_VERSION == "2" ]]; then
+        TEMP_WORKSPACES=$ROS2_WORKSPACES/*
+    fi
     TEMP_dirarray=()
     for filepath in $TEMP_WORKSPACES; do
         if [ -d $filepath ]; then
@@ -48,8 +72,14 @@ function set_workspace() {
     fi
     workspacename=${TEMP_dirarray[$number]}
 
-    echo "[bashrc_ROS][INFO] source ${workspacename}/devel/setup.bash"
-    source $workspacename"/devel/setup.bash"
+    if [[ $ROS_VERSION == "1" ]]; then
+        setup_script=$workspacename"/devel/setup.bash"
+    elif [[ $ROS_VERSION == "2" ]]; then
+        setup_script=$workspacename"/install/local_setup.bash"
+    fi
+
+    echo "[bashrc_ROS][INFO] source $setup_script"
+    source $setup_script
 
     export workspacename
 }
