@@ -13,6 +13,7 @@ elif [ $(lsb_release -sr ) == "16.04" ]; then
     base_setup_script_ROS1=/opt/ros/kinetic/setup.bash
 elif [ $(lsb_release -sr ) == "18.04" ]; then
     base_setup_script_ROS1=/opt/ros/melodic/setup.bash
+    base_setup_script_ROS2=/opt/ros/dashing/setup.bash
 elif [ $(lsb_release -sr ) == "20.04" ]; then
     base_setup_script_ROS1=/opt/ros/noetic/setup.bash
     base_setup_script_ROS2=/opt/ros/foxy/setup.bash
@@ -24,14 +25,14 @@ fi
 export ROSCONSOLE_FORMAT='[${severity}] [WallTime: ${time}] [node:${node}] [func:${function}]: ${message}'
 
 #
-function setup_ros1() {
+function setros1() {
     if [[ -e $base_setup_script_ROS1 ]]; then
         source $base_setup_script_ROS1
         echo "[bashrc_ROS][INFO] loaded $base_setup_script_ROS1"
     fi
 }
 
-function setup_ros2() {
+function setros2() {
     if [[ -e $base_setup_script_ROS2 ]]; then
         source $base_setup_script_ROS2
         echo "[bashrc_ROS][INFO] loaded $base_setup_script_ROS2"
