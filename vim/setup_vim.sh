@@ -82,6 +82,7 @@ fi
 #
 # Install required packages for vim8
 #
+sudo apt install python3-pip
 pip3 install --user pynvim
 
 
