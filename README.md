@@ -18,4 +18,7 @@ sudo ubuntu-drivers install
   + keepassxc
   + slack
   + Google chrome
+  + inkscape
 
+- docker + nvidia-dockerのインストール
+- CUDAのインストール
