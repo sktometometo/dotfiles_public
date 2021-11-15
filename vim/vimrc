@@ -120,6 +120,9 @@ augroup MyXML
   autocmd Filetype xml inoremap <buffer> </ </<C-x><C-o>
 augroup END
 
+autocmd BufNewFile,Bufread *.l set filetype=lisp
+autocmd BufNewFile,Bufread *.launch set filetype=xml
+
 
 
 """""""""""""""
