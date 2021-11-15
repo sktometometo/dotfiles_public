@@ -9,7 +9,7 @@ Usage: $(basename "$0") [OPTIONS]...
     -s      Skip vim install (just config installation)
 EOM
 
-    exit 2
+exit 2
 }
 
 BUILD=false
@@ -30,16 +30,12 @@ while getopts "bhs" optKey; do
     esac
 done
 
-#
 # Directory
-#
 FILEDIR="$(cd $(dirname $0); pwd)" # 設定ファイルの場所
 SRCDIR="$HOME/Sources/vim" # source のクローン先
 DSTDIR="" # インストール先 空の場合はデフォルト
 
-#
 # Install vim from source
-#
 if [[ $SKIP_INSTALL == 0 ]];then
     if "${BUILD}"; then
         if [ -e /etc/debian_version ] || [ -e /etc/debian_release ]; then
@@ -60,12 +56,12 @@ if [[ $SKIP_INSTALL == 0 ]];then
                 libluajit-5.1 \
                 gettext \
                 libtinfo-dev
-            pip3 install --user --upgrade pynvim
-        elif [ -e /etc/centos-release ]; then
-            #
-            sudo yum update
-        else
-            echo "Unknown distribution"
+                            pip3 install --user --upgrade pynvim
+                        elif [ -e /etc/centos-release ]; then
+                            #
+                            sudo yum update
+                        else
+                            echo "Unknown distribution"
         fi
 
         if [ -e $SRCDIR ]; then
@@ -89,37 +85,34 @@ if [[ $SKIP_INSTALL == 0 ]];then
                 --with-luajit \
                 --enable-fail-if-missing \
                 --prefix=$DSTDIR
-        else
-            ./configure \
-                --with-features=huge \
-                --enable-gui=gtk2 \
-                --enable-perlinterp \
-                --enable-pythoninterp \
-                --enable-python3interp \
-                --enable-rubyinterp \
-                --enable-luainterp \
-                --with-luajit \
-                --enable-fail-if-missing
+                        else
+                            ./configure \
+                                --with-features=huge \
+                                --enable-gui=gtk2 \
+                                --enable-perlinterp \
+                                --enable-pythoninterp \
+                                --enable-python3interp \
+                                --enable-rubyinterp \
+                                --enable-luainterp \
+                                --with-luajit \
+                                --enable-fail-if-missing
+                                fi
+                                make
+                                sudo make install
+                fi
         fi
-        make
-        sudo make install
-    fi
-fi
 
-
-
-#
 # Install required packages for vim8
-#
 echo "Installing required packages for vim8"
 sudo apt install python3-pip
 pip3 install --user pynvim
 
+# Install formatter
+echo "Installing formatter"
+sudo apt install clang-format
+sudo apt install python-autopep8
 
-
-#
 # Install configuration files for vim8
-#
 echo "Installing configuration files for vim8"
 if [ -e $HOME/.vimrc ]; then
     rm -rf $HOME/.vimrc
