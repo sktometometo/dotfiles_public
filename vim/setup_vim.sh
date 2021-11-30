@@ -110,7 +110,7 @@ pip3 install --user pynvim
 # Install formatter
 echo "Installing formatter"
 sudo apt install clang-format
-sudo apt install python-autopep8
+sudo apt install python3-autopep8
 
 # Install configuration files for vim8
 echo "Installing configuration files for vim8"
