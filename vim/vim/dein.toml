@@ -1,17 +1,29 @@
+#
+# Vim8をNeoVim対応にする
+#
 [[plugins]]
 repo = 'roxma/nvim-yarp'
 if = "!has('nvim')"
-
 [[plugins]]
 repo = 'roxma/vim-hug-neovim-rpc'
 if = "!has('nvim')"
 
+#
+# UI for dain update
+#
 [[plugins]]
 repo = 'wsdjeg/dein-ui.vim'
 
+#
+# Formatter
+#
 [[plugins]]
 repo = 'Chiel92/vim-autoformat'
 
+
+#
+# Completion
+#
 [[plugins]]
 repo = 'Shougo/deoplete.nvim'
 hook_add = '''
@@ -22,12 +34,10 @@ hook_add = '''
     " \   'smart_case': v:true,
     " \   })
 '''
-
 [[plugins]]
 repo = 'Shougo/neco-vim'
 depends = ['deoplete.nvim']
 
-[[plugins]]
 repo = 'deoplete-plugins/deoplete-jedi'
 on_ft = 'python'
 depends = ['deoplete.nvim']
@@ -45,6 +55,7 @@ hook_add = '''
 #    let g:deoplete#sources#clang#sort_algo = 'priority'
 #    let g:deoplete#sources#clang#clang_complete_database="./build/"
 #'''
+
 
 [[plugins]]
 repo = 'Shougo/denite.nvim'
@@ -66,26 +77,36 @@ hook_add = '''
     endfunction
 '''
 
+
+#
+# Git wrapper plugin
+#
 [[plugins]]
 repo = 'tpope/vim-fugitive'
 
-[[plugins]]
-repo = 'vim-airline/vim-airline-themes'
-hook_add = '''
-    let g:airline_theme='simple'
-'''
 
+#
+# Status bar plugins
+#
 [[plugins]]
 repo = 'vim-airline/vim-airline'
 depends = ['vim-airline-themes', 'fugitive.vim']
 hook_add = '''
     let g:airline#extensions#tabline#enabled = 1
     let g:airline#extensions#tabline#formatter = 'unique_tail_improved'
-
     " C-p や C-n でバッファの切り替えを行い, タブ移動を可能にする
     nmap <C-p> <Plug>AirlineSelectPrevTab
     nmap <C-n> <Plug>AirlineSelectNextTab
 '''
+[[plugins]]
+repo = 'vim-airline/vim-airline-themes'
+hook_add = '''
+    let g:airline_theme='simple'
+'''
+
+
+[[plugins]]
+repo = 'prabirshrestha/vim-lsp'
 
 [[plugins]]
 repo = 'lervag/vimtex'
@@ -118,23 +139,3 @@ on_ft = ['rust','toml']
 hook_add = '''
 let g:rustfmt_autosave = 1
 '''
-
-#[[plugins]]
-#repo = 'scrooloose/syntastic'
-#on_ft = ['python']
-#hook_add = '''
-#set statusline+=%#warningmsg#
-#set statusline+=%{SyntasticStatuslineFlag()}
-#set statusline+=%*
-#
-#let g:syntastic_always_populate_loc_list = 1
-#let g:syntastic_enable_signs = 1
-#let g:syntastic_auto_loc_list = 1
-#let g:syntastic_check_on_open = 1
-#let g:syntastic_check_on_wq = 0
-#
-#let g:syntastic_python_checker = ['pep8']
-#'''
-
-#[[plugins]]
-#repo = 'taketwo/vim-ros'
