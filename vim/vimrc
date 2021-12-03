@@ -110,16 +110,18 @@ set ignorecase
 " 検索時大文字が入ったときのみignorecaseを無効
 set smartcase
 
+"
+" Miscs
+"
+" Spelling check
+set spelllang=en,cjk
+
 
 
 """"""""""""""""""""""
 " ファイルごとの設定 "
 """"""""""""""""""""""
-augroup MyXML
-  autocmd!
-  autocmd Filetype xml inoremap <buffer> </ </<C-x><C-o>
-augroup END
-
+autocmd Filetype xml inoremap <buffer> </ </<C-x><C-o>
 autocmd BufNewFile,Bufread *.l set filetype=lisp
 autocmd BufNewFile,Bufread *.launch set filetype=xml
 

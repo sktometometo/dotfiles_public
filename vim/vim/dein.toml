@@ -17,33 +17,34 @@ repo = 'wsdjeg/dein-ui.vim'
 #
 # Formatter
 #
-[[plugins]]
-repo = 'Chiel92/vim-autoformat'
+#[[plugins]]
+#repo = 'Chiel92/vim-autoformat'
 
 
 #
 # Completion
 #
-[[plugins]]
-repo = 'Shougo/deoplete.nvim'
-hook_add = '''
-    let g:deoplete#enable_at_startup = 1
-    " call deoplete#enable()
-    " call deoplete#custom#option({
-    " \   'auto_complete_delay': 200,
-    " \   'smart_case': v:true,
-    " \   })
-'''
-[[plugins]]
-repo = 'Shougo/neco-vim'
-depends = ['deoplete.nvim']
-
-repo = 'deoplete-plugins/deoplete-jedi'
-on_ft = 'python'
-depends = ['deoplete.nvim']
-hook_add = '''
-    " let g:deoplete#sources#jedi#python_path = '/usr/local/lib/python3.6'
-'''
+#[[plugins]]
+#repo = 'Shougo/deoplete.nvim'
+#hook_add = '''
+#    let g:deoplete#enable_at_startup = 1
+#    " call deoplete#enable()
+#    " call deoplete#custom#option({
+#    " \   'auto_complete_delay': 200,
+#    " \   'smart_case': v:true,
+#    " \   })
+#'''
+#[[plugins]]
+#repo = 'Shougo/neco-vim'
+#depends = ['deoplete.nvim']
+## for python
+#[[plugins]]
+#repo = 'deoplete-plugins/deoplete-jedi'
+#on_ft = 'python'
+#depends = ['deoplete.nvim']
+#hook_add = '''
+#    " let g:deoplete#sources#jedi#python_path = '/usr/local/lib/python3.6'
+#'''
 
 #[[plugins]]
 #repo = 'deoplete-plugins/deoplete-clang'
@@ -57,25 +58,25 @@ hook_add = '''
 #'''
 
 
-[[plugins]]
-repo = 'Shougo/denite.nvim'
-hook_add = '''
-    autocmd FileType denite call s:denite_my_settings()
-    function! s:denite_my_settings() abort
-        nnoremap <silent><buffer><expr> <CR>
-        \ denite#do_map('do_action')
-        nnoremap <silent><buffer><expr> d
-        \ denite#do_map('do_action', 'delete')
-        nnoremap <silent><buffer><expr> p
-        \ denite#do_map('do_action', 'preview')
-        nnoremap <silent><buffer><expr> q
-        \ denite#do_map('quit')
-        nnoremap <silent><buffer><expr> i
-        \ denite#do_map('open_filter_buffer')
-        nnoremap <silent><buffer><expr> <Space>
-        \ denite#do_map('toggle_select').'j'
-    endfunction
-'''
+#[[plugins]]
+#repo = 'Shougo/denite.nvim'
+#hook_add = '''
+#    autocmd FileType denite call s:denite_my_settings()
+#    function! s:denite_my_settings() abort
+#        nnoremap <silent><buffer><expr> <CR>
+#        \ denite#do_map('do_action')
+#        nnoremap <silent><buffer><expr> d
+#        \ denite#do_map('do_action', 'delete')
+#        nnoremap <silent><buffer><expr> p
+#        \ denite#do_map('do_action', 'preview')
+#        nnoremap <silent><buffer><expr> q
+#        \ denite#do_map('quit')
+#        nnoremap <silent><buffer><expr> i
+#        \ denite#do_map('open_filter_buffer')
+#        nnoremap <silent><buffer><expr> <Space>
+#        \ denite#do_map('toggle_select').'j'
+#    endfunction
+#'''
 
 
 #
@@ -105,8 +106,49 @@ hook_add = '''
 '''
 
 
+#
+# vim lsp
+#
 [[plugins]]
 repo = 'prabirshrestha/vim-lsp'
+hook_add = '''
+    autocmd BufWritePre * call execute('LspDocumentFormatSync')
+'''
+[[plugins]]
+repo = 'prabirshrestha/asyncomplete.vim'
+hook_add = '''
+    inoremap <expr> <Tab>   pumvisible() ? "\<C-n>" : "\<Tab>"
+    inoremap <expr> <S-Tab> pumvisible() ? "\<C-p>" : "\<S-Tab>"
+    inoremap <expr> <cr>    pumvisible() ? asyncomplete#close_popup() : "\<cr>"
+'''
+[[plugins]]
+repo = 'mattn/vim-lsp-settings'
+hook_add = '''
+   " Enable flake8
+   let g:lsp_settings = {
+   \   'pylsp-all': {
+   \     'workspace_config': {
+   \       'pylsp': {
+   \         'configurationSources': ['flake8'],
+   \         'plugins': {
+   \           'flake8': {
+   \             'enabled': 1
+   \           },
+   \           'mccabe': {
+   \             'enabled': 0
+   \           },
+   \           'pycodestyle': {
+   \             'enabled': 0
+   \           },
+   \           'pyflakes': {
+   \             'enabled': 0
+   \           },
+   \         }
+   \       }
+   \     }
+   \   }
+   \ }
+'''
 
 [[plugins]]
 repo = 'lervag/vimtex'
