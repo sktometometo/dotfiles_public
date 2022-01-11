@@ -2,11 +2,11 @@
 # Vim8をNeoVim対応にする
 #
 [[plugins]]
+if = "!has('nvim')"
 repo = 'roxma/nvim-yarp'
-if = "!has('nvim')"
 [[plugins]]
-repo = 'roxma/vim-hug-neovim-rpc'
 if = "!has('nvim')"
+repo = 'roxma/vim-hug-neovim-rpc'
 
 #
 # UI for dain update
@@ -90,7 +90,6 @@ repo = 'tpope/vim-fugitive'
 # Status bar plugins
 #
 [[plugins]]
-repo = 'vim-airline/vim-airline'
 depends = ['vim-airline-themes', 'fugitive.vim']
 hook_add = '''
     let g:airline#extensions#tabline#enabled = 1
@@ -99,30 +98,30 @@ hook_add = '''
     nmap <C-p> <Plug>AirlineSelectPrevTab
     nmap <C-n> <Plug>AirlineSelectNextTab
 '''
+repo = 'vim-airline/vim-airline'
 [[plugins]]
-repo = 'vim-airline/vim-airline-themes'
 hook_add = '''
     let g:airline_theme='simple'
 '''
+repo = 'vim-airline/vim-airline-themes'
 
 
 #
 # vim lsp
 #
 [[plugins]]
-repo = 'prabirshrestha/vim-lsp'
 hook_add = '''
-    autocmd BufWritePre * call execute('LspDocumentFormatSync')
+"    autocmd BufWritePre * call execute('LspDocumentFormatSync')
 '''
+repo = 'prabirshrestha/vim-lsp'
 [[plugins]]
-repo = 'prabirshrestha/asyncomplete.vim'
 hook_add = '''
     inoremap <expr> <Tab>   pumvisible() ? "\<C-n>" : "\<Tab>"
     inoremap <expr> <S-Tab> pumvisible() ? "\<C-p>" : "\<S-Tab>"
     inoremap <expr> <cr>    pumvisible() ? asyncomplete#close_popup() : "\<cr>"
 '''
+repo = 'prabirshrestha/asyncomplete.vim'
 [[plugins]]
-repo = 'mattn/vim-lsp-settings'
 hook_add = '''
    " Enable flake8
    let g:lsp_settings = {
@@ -149,35 +148,36 @@ hook_add = '''
    \   }
    \ }
 '''
+repo = 'mattn/vim-lsp-settings'
 
 [[plugins]]
-repo = 'lervag/vimtex'
-on_ft = ['tex']
 hook_add = '''
     let g:UltiSnipsExpandTrigger = '<tab>'
     let g:UltiSnipsJumpForwardTrigger = '<tab>'
     let g:UltiSnipsJumpBackwardTrigger = '<s-tab>'
 '''
+on_ft = ['tex']
+repo = 'lervag/vimtex'
 
 [[plugins]]
-repo = 'pboettch/vim-cmake-syntax'
 on_ft = ['cmake']
+repo = 'pboettch/vim-cmake-syntax'
 
 [[plugins]]
-repo = 'asciidoc/vim-asciidoc'
 on_ft = ['asciidoc']
+repo = 'asciidoc/vim-asciidoc'
 
 [[plugins]]
-repo = 'sudar/vim-arduino-syntax'
 on_ft = ['arduino']
+repo = 'sudar/vim-arduino-syntax'
 
 [[plugins]]
-repo = 'cespare/vim-toml'
 on_ft = ['toml']
+repo = 'cespare/vim-toml'
 
 [[plugins]]
-repo = 'rust-lang/rust.vim'
-on_ft = ['rust','toml']
 hook_add = '''
 let g:rustfmt_autosave = 1
 '''
+on_ft = ['rust', 'toml']
+repo = 'rust-lang/rust.vim'
