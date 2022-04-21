@@ -24,38 +24,33 @@ repo = 'wsdjeg/dein-ui.vim'
 #
 # Completion
 #
-#[[plugins]]
-#repo = 'Shougo/deoplete.nvim'
-#hook_add = '''
-#    let g:deoplete#enable_at_startup = 1
-#    " call deoplete#enable()
-#    " call deoplete#custom#option({
-#    " \   'auto_complete_delay': 200,
-#    " \   'smart_case': v:true,
-#    " \   })
-#'''
-#[[plugins]]
-#repo = 'Shougo/neco-vim'
-#depends = ['deoplete.nvim']
-## for python
-#[[plugins]]
-#repo = 'deoplete-plugins/deoplete-jedi'
-#on_ft = 'python'
-#depends = ['deoplete.nvim']
-#hook_add = '''
-#    " let g:deoplete#sources#jedi#python_path = '/usr/local/lib/python3.6'
-#'''
+[[plugins]]
+repo = 'Shougo/ddc.vim'
+[[plugins]]
+repo = 'shun/ddc-vim-lsp'
+hook_add = '''
+  call ddc#custom#patch_global('sources', ['vim-lsp'])
+  call ddc#custom#patch_global('sourceOptions', {
+      \ 'vim-lsp': {
+      \   'matchers': ['matcher_head'],
+      \   'mark': 'lsp',
+      \ },
+      \ })
 
-#[[plugins]]
-#repo = 'deoplete-plugins/deoplete-clang'
-#on_ft = ['c', 'cpp', 'cmake']
-#depends = ['deoplete.nvim']
-#hook_add = '''
-#    let g:deoplete#sources#clang#libclang_path = '/usr/lib/llvm-6.0/lib/'
-#    let g:deoplete#sources#clang#clang_header = '/usr/include/clang/'
-#    let g:deoplete#sources#clang#sort_algo = 'priority'
-#    let g:deoplete#sources#clang#clang_complete_database="./build/"
-#'''
+  " if you want to use the unsupported CompleteProvider Server,
+  " set true by'ignoreCompleteProvider'.
+  call ddc#custom#patch_filetype(['css'], {
+     \ 'sourceParams': {
+     \   'vim-lsp': {
+     \     'ignoreCompleteProvider': v:true,
+     \   },
+     \ },
+     \ })
+'''
+[[plugins]]
+repo = 'Shougo/ddc-around'
+[[plugins]]
+repo = 'vim-denops/denops.vim'
 
 
 #[[plugins]]
@@ -114,13 +109,6 @@ hook_add = '''
 "    autocmd BufWritePre * call execute('LspDocumentFormatSync')
 '''
 repo = 'prabirshrestha/vim-lsp'
-[[plugins]]
-hook_add = '''
-    inoremap <expr> <Tab>   pumvisible() ? "\<C-n>" : "\<Tab>"
-    inoremap <expr> <S-Tab> pumvisible() ? "\<C-p>" : "\<S-Tab>"
-    inoremap <expr> <cr>    pumvisible() ? asyncomplete#close_popup() : "\<cr>"
-'''
-repo = 'prabirshrestha/asyncomplete.vim'
 [[plugins]]
 hook_add = '''
    " Enable flake8
