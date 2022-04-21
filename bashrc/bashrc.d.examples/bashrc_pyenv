@@ -13,8 +13,9 @@ function pyenv-install () {
 }
 
 function pyenv-update () {
-    cd $1
+    pushd $1
     git pull
+    popd
 }
 
 function pyenv-initialize () {
@@ -40,8 +41,9 @@ function pyenv-virtualenv-install () {
 }
 
 function pyenv-virtualenv-update () {
-    cd $1
+    pushd $1
     git pull
+    popd
 }
 
 function pyenv-virtualenv-initialize () {
