@@ -12,15 +12,20 @@ function pyenv-install () {
     git clone https://github.com/pyenv/pyenv.git $1
 }
 
+function pyenv-update () {
+    cd $1
+    git pull
+}
+
 function pyenv-initialize () {
     export PYENV_ROOT
     export PATH="$PYENV_ROOT/bin:$PATH"
-    if command -v pyenv 1>/dev/null 2>&1; then
-        eval "$(pyenv init -)"
-    fi
+    eval "$(pyenv init --path)"
+    eval "$(pyenv init -)"
 }
 
 if [ -e $PYENV_ROOT ]; then
+    pyenv-update $PYENV_ROOT
     pyenv-initialize
 else
     pyenv-install $PYENV_ROOT
@@ -34,13 +39,20 @@ function pyenv-virtualenv-install () {
     git clone https://github.com/pyenv/pyenv-virtualenv.git $1
 }
 
+function pyenv-virtualenv-update () {
+    cd $1
+    git pull
+}
+
 function pyenv-virtualenv-initialize () {
+    export PYENV_VIRTUALENV_ROOT
     eval "$(pyenv virtualenv-init -)"
 }
 
 if [ -e $PYENV_ROOT/plugins/pyenv-virtualenv ]; then
-    pyenv-virtualenv-initialize $PYENV_VIRTUALENV_ROOT
+    pyenv-virtualenv-update $PYENV_VIRTUALENV_ROOT
+    pyenv-virtualenv-initialize
 else
     pyenv-virtualenv-install $PYENV_VIRTUALENV_ROOT
-    pyenv-virtualenv-initialize $PYENV_VIRTUALENV_ROOT
+    pyenv-virtualenv-initialize
 fi
