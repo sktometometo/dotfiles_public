@@ -70,7 +70,12 @@
 (setq read-file-name-completion-ignore-case t)
 
 ;;
-(add-to-list 'load-path "/opt/ros/melodic/share/euslime")
+(add-to-list 'load-path (shell-command-to-string "rospack find euslime"))
+(if (not (and (string-prefix-p "/opt" (getenv "EUSDIR"))
+              (string-prefix-p "/opt" (shell-command-to-string "rospack find euslime"))))
+    (setq euslime-compile-path "~/.euslime_source")
+  (setq euslime-compile-path "~/.euslime_opt")
+)
 (require 'euslime-config)
 (setq inferior-euslisp-program "roseus")
 (slime-setup '(slime-fancy slime-banner slime-repl-ansi-color))
