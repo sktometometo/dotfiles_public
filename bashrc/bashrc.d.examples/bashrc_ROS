@@ -98,3 +98,7 @@ function set_workspace() {
 function cd_workspace() {
     cd $workspacename
 }
+
+function get_hostname_of_node() {
+    rosnode info $1 | grep "contacting node" | sed -e "s/.*http:\/\///" | sed -e "s/:[0-9]*\/.*//"
+}
