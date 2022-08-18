@@ -70,9 +70,10 @@
 (setq read-file-name-completion-ignore-case t)
 
 ;;
-(add-to-list 'load-path (shell-command-to-string "rospack find euslime"))
+(setq euslime-path (replace-string "~%" (shell-command-to-string "rospack find euslime") ""))
+(add-to-list 'load-path euslime-path)
 (if (not (and (string-prefix-p "/opt" (getenv "EUSDIR"))
-              (string-prefix-p "/opt" (shell-command-to-string "rospack find euslime"))))
+              (string-prefix-p "/opt" euslime-path)))
     (setq euslime-compile-path "~/.euslime_source")
   (setq euslime-compile-path "~/.euslime_opt")
 )
