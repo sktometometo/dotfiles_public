@@ -19,6 +19,7 @@ sudo ubuntu-drivers install
   + slack
   + Google chrome
   + inkscape
+  + Vivaldi browser
 
 - docker + nvidia-dockerのインストール
 - CUDAのインストール
