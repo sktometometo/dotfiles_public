@@ -26,7 +26,6 @@ function pyenv-initialize () {
 }
 
 if [ -e $PYENV_ROOT ]; then
-    pyenv-update $PYENV_ROOT
     pyenv-initialize
 else
     pyenv-install $PYENV_ROOT
@@ -52,7 +51,6 @@ function pyenv-virtualenv-initialize () {
 }
 
 if [ -e $PYENV_ROOT/plugins/pyenv-virtualenv ]; then
-    pyenv-virtualenv-update $PYENV_VIRTUALENV_ROOT
     pyenv-virtualenv-initialize
 else
     pyenv-virtualenv-install $PYENV_VIRTUALENV_ROOT
