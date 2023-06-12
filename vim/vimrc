@@ -15,7 +15,7 @@ let s:dein_repo_dir = expand('$HOME/.cache/dein/repos/github.com/Shougo/dein.vim
 " dein.vimがなければgithubからDownload
 if &runtimepath !~# '/dein.vim'
     if !isdirectory(s:dein_repo_dir)
-        execute '!git clone https://github.com/Shougo/dein.vim' s:dein_repo_dir
+        execute '!git clone https://github.com/Shougo/dein.vim -b 2.2' s:dein_repo_dir
     endif
     execute 'set runtimepath^='. fnamemodify(s:dein_repo_dir, ':p')
 endif
