@@ -27,10 +27,10 @@ pip3 install --user --break-system-packages websockets
 ### ファイル配置
 
 ```bash
-# dotfiles_public/agent/ からホームにシンボリックリンクを張る
-# (./setup.sh を実行すると自動で作成される)
-ln -sf ~/dotfiles_public/agent/teams-cli.py ~/teams-cli.py
-ln -sf ~/dotfiles_public/agent/teams-start.sh ~/teams-start.sh
+# dotfiles_public/agents/ からホームにシンボリックリンクを張る
+# (./agents/setup_agents.sh を実行すると自動で作成される)
+ln -sf ~/dotfiles_public/agents/teams-cli.py ~/teams-cli.py
+ln -sf ~/dotfiles_public/agents/teams-start.sh ~/teams-start.sh
 ```
 
 ## 起動手順

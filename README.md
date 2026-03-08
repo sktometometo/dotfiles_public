@@ -10,22 +10,17 @@ cd ~/dotfiles_public
 ./setup.sh
 ```
 
-`setup.sh` は以下を行う:
-
-- `agent/` 内のスクリプトを `~/` にシンボリックリンク
-- `~/.config/agent-tools/config.json` を作成（初回のみ）
-- himalaya, gcalcli, gkeepapi 等のインストール（対話式）
-- 各種 dotfiles セットアップスクリプトの実行（対話式）
+`setup.sh` は各ディレクトリの `setup_*.sh` を対話式に実行する。エージェントツールのみセットアップする場合は `./agents/setup_agents.sh` を直接実行する。
 
 ## エージェントツール
 
 | ツール | サービス | コマンド | ドキュメント |
 |--------|---------|---------|-------------|
-| himalaya | Gmail | `himalaya` | [gmail-access.md](agent/gmail-access.md) |
-| gcalcli | Google Calendar | `gcalcli` | [gcal-access.md](agent/gcal-access.md) |
-| keep-cli.py | Google Keep | `~/keep-cli.py` | [keep-access.md](agent/keep-access.md) |
-| onenote-cli.py | OneNote | `~/onenote-cli.py` | [onenote-access.md](agent/onenote-access.md) |
-| teams-cli.py | Teams | `~/teams-cli.py` | [teams-access.md](agent/teams-access.md) |
+| himalaya | Gmail | `himalaya` | [gmail-access.md](agents/gmail-access.md) |
+| gcalcli | Google Calendar | `gcalcli` | [gcal-access.md](agents/gcal-access.md) |
+| keep-cli.py | Google Keep | `~/keep-cli.py` | [keep-access.md](agents/keep-access.md) |
+| onenote-cli.py | OneNote | `~/onenote-cli.py` | [onenote-access.md](agents/onenote-access.md) |
+| teams-cli.py | Teams | `~/teams-cli.py` | [teams-access.md](agents/teams-access.md) |
 
 ### 認証セットアップ
 
@@ -35,7 +30,7 @@ cd ~/dotfiles_public
 2. Gmail API を有効化
 3. OAuth 同意画面を設定し、テストユーザーに自分を追加
 4. OAuth クライアント ID を作成（種類: デスクトップアプリ）
-5. `~/.config/himalaya/config.toml` を作成（テンプレートは [gmail-access.md](agent/gmail-access.md) 参照）
+5. `~/.config/himalaya/config.toml` を作成（テンプレートは [gmail-access.md](agents/gmail-access.md) 参照）
 6. 認証を実行:
 
 ```bash
@@ -144,19 +139,20 @@ python3 ~/teams-cli.py chats
 | `~/.local/share/gcalcli/oauth` | gcalcli の OAuth トークン |
 | `~/.config/agent-tools/keep-state.json` | gkeepapi の同期キャッシュ |
 
-テンプレート: [agent/config.example.json](agent/config.example.json)
+テンプレート: [agents/config.example.json](agents/config.example.json)
 
 ### マルチエージェント対応
 
 | エージェント | 設定ファイル |
 |------------|-------------|
-| Claude Code | `~/.claude/CLAUDE.md`（`@` で `agent/*.md` を参照） |
+| Claude Code | `~/.claude/CLAUDE.md`（`@` で `agents/*.md` を参照） |
 | Codex | `AGENTS.md`（リポジトリルート）+ `~/.codex/instructions.md` |
 
 ## dotfiles
 
 | ディレクトリ | 内容 |
 |-------------|------|
+| `agents/` | AI エージェント用 CLI ツール・ドキュメント |
 | `bashrc/` | Bash 設定 |
 | `emacs/` | Emacs 設定 |
 | `vim/` | Vim/Neovim 設定 |
