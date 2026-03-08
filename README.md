@@ -26,16 +26,20 @@ cd ~/dotfiles_public
 
 #### Gmail (himalaya)
 
-1. [Google Cloud Console](https://console.developers.google.com/) でプロジェクトを作成
-2. Gmail API を有効化
-3. OAuth 同意画面を設定し、テストユーザーに自分を追加
-4. OAuth クライアント ID を作成（種類: デスクトップアプリ）
-5. `~/.config/himalaya/config.toml` を作成（テンプレートは [gmail-access.md](agents/gmail-access.md) 参照）
-6. 認証を実行:
+**アプリパスワード方式（推奨）:**
+
+1. Google アカウントで 2 段階認証を有効化
+2. [アプリパスワード](https://myaccount.google.com/apppasswords) を生成
+3. パスワードをファイルに保存:
 
 ```bash
-himalaya account configure <account_name>
+echo -n "<app_password>" > ~/.config/agent-tools/gmail-app-password.txt
+chmod 600 ~/.config/agent-tools/gmail-app-password.txt
 ```
+
+4. `~/.config/himalaya/config.toml` を作成（テンプレートは [gmail-access.md](agents/gmail-access.md) の方法 A 参照）
+
+OAuth2 方式も利用可能（[gmail-access.md](agents/gmail-access.md) の方法 B 参照）。
 
 #### Google Calendar (gcalcli)
 

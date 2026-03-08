@@ -10,7 +10,54 @@ curl -sSL https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh 
 
 ## セットアップ
 
-### 1. Google Cloud で OAuth2 クライアントを作成
+### 方法 A: アプリパスワード（推奨）
+
+OAuth2 より設定が簡単。Google Cloud Console の設定が不要。
+
+#### 1. アプリパスワードの取得
+
+1. Google アカウントで 2 段階認証を有効化
+2. [アプリパスワード](https://myaccount.google.com/apppasswords) ページでパスワードを生成
+3. パスワードをファイルに保存:
+
+```bash
+mkdir -p ~/.config/agent-tools
+echo -n "<app_password>" > ~/.config/agent-tools/gmail-app-password.txt
+chmod 600 ~/.config/agent-tools/gmail-app-password.txt
+```
+
+#### 2. himalaya の設定
+
+`~/.config/himalaya/config.toml` を作成:
+
+```toml
+[accounts.<account_name>]
+email = "<your_email>"
+folder.aliases.inbox = "INBOX"
+folder.aliases.sent = "[Gmail]/Sent Mail"
+folder.aliases.drafts = "[Gmail]/Drafts"
+folder.aliases.trash = "[Gmail]/Trash"
+
+backend.type = "imap"
+backend.host = "imap.gmail.com"
+backend.port = 993
+backend.login = "<your_email>"
+backend.auth.type = "password"
+backend.auth.cmd = "cat ~/.config/agent-tools/gmail-app-password.txt"
+
+message.send.backend.type = "smtp"
+message.send.backend.host = "smtp.gmail.com"
+message.send.backend.port = 465
+message.send.backend.login = "<your_email>"
+message.send.backend.auth.type = "password"
+message.send.backend.auth.cmd = "cat ~/.config/agent-tools/gmail-app-password.txt"
+```
+
+### 方法 B: OAuth2
+
+Google Cloud Console でのプロジェクト設定が必要だが、アプリパスワードが使えない場合に利用する。
+
+#### 1. Google Cloud で OAuth2 クライアントを作成
 
 1. [Google Cloud Console](https://console.developers.google.com/) でプロジェクトを作成
 2. Gmail API を有効化
@@ -18,7 +65,7 @@ curl -sSL https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh 
 4. OAuth クライアント ID を作成（種類: デスクトップアプリ）
 5. Client ID と Client Secret を控える
 
-### 2. himalaya の設定
+#### 2. himalaya の設定
 
 `~/.config/himalaya/config.toml` を作成:
 
@@ -61,7 +108,7 @@ message.send.backend.auth.pkce = true
 message.send.backend.auth.scope = "https://mail.google.com/"
 ```
 
-### 3. 認証
+#### 3. 認証
 
 ```bash
 himalaya account configure <account_name>
