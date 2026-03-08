@@ -115,7 +115,7 @@ sudo apt install tidy
 
 # Install Deno
 curl -fsSL https://deno.land/install.sh | sh
-echo "export DENO_INSTALL=\"/home/sktometometo/.deno\"" >> ~/.bashrc
+echo "export DENO_INSTALL=\"\$HOME/.deno\"" >> ~/.bashrc
 echo "export PATH=\"\$DENO_INSTALL/bin:\$PATH\"" >> ~/.bashrc
 
 # Install configuration files for vim8

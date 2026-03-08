@@ -1,0 +1,17 @@
+{
+  "onenote": {
+    "client_id": "YOUR_CLIENT_ID",
+    "token_file": "~/onenotemcp/.access-token.txt",
+    "notebooks": {
+      "mynotebook": "NOTEBOOK_ID"
+    },
+    "sections": {
+      "mysection": "SECTION_ID"
+    }
+  },
+  "teams": {
+    "orgs": {
+      "myorg": "Organization Name"
+    }
+  }
+}
