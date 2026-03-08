@@ -11,7 +11,7 @@ echo "Setting up dotfiles from $DOTFILES_DIR"
 # Agent tools - symlink to home
 echo ""
 echo "=== Agent tools ==="
-for f in teams-cli.py teams-start.sh onenote-cli.py; do
+for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py; do
     src="$DOTFILES_DIR/agent/$f"
     dst="$HOME/$f"
     if [ -f "$src" ]; then

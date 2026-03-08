@@ -13,5 +13,9 @@
     "orgs": {
       "myorg": "Organization Name"
     }
+  },
+  "keep": {
+    "email": "your_email@gmail.com",
+    "master_token": "YOUR_MASTER_TOKEN"
   }
 }
