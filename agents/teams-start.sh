@@ -38,14 +38,15 @@ echo "  SSH tunnel: ssh -L $VNC_PORT:localhost:$VNC_PORT <host>"
 echo "Waiting for desktop session on $VNC_DISPLAY..."
 sleep 8
 
-# Start Chrome
-DISPLAY="$VNC_DISPLAY" nohup google-chrome \
+# Start Chrome detached from this shell so it survives script exit.
+DISPLAY="$VNC_DISPLAY" setsid -f google-chrome \
   --remote-debugging-port="$CDP_PORT" \
   --no-first-run \
   --disable-gpu \
   --disable-software-rasterizer \
   --disable-dev-shm-usage \
   --no-sandbox \
+  --password-store=basic \
   --user-data-dir="$CHROME_DATA_DIR" \
   "https://teams.microsoft.com" >/tmp/teams-chrome.log 2>&1 &
 
