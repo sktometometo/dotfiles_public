@@ -1,196 +1,395 @@
 #!/usr/bin/env python3
-"""CLI tool to access Google Keep via gkeepapi."""
+"""CLI tool to access Google Keep via Chrome CDP."""
 
+import asyncio
 import json
-import os
+import random
 import sys
+import urllib.parse
+import urllib.request
 
-CONFIG_FILE = os.path.expanduser("~/.config/agent-tools/config.json")
-STATE_FILE = os.path.expanduser("~/.config/agent-tools/keep-state.json")
-
-
-def load_config():
-    if not os.path.exists(CONFIG_FILE):
-        return {}
-    with open(CONFIG_FILE) as f:
-        return json.load(f).get("keep", {})
+import websockets
 
 
-def get_keep():
-    import gkeepapi
-
-    config = load_config()
-    email = config.get("email", "")
-    master_token = config.get("master_token", "")
-    if not email or not master_token:
-        raise RuntimeError(
-            "keep.email and keep.master_token required in ~/.config/agent-tools/config.json"
-        )
-
-    keep = gkeepapi.Keep()
-
-    state = None
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE) as f:
-            state = json.load(f)
-
-    keep.authenticate(email, master_token, state=state)
-
-    return keep
+CDP_URL = "http://localhost:9222"
+KEEP_URL = "https://keep.google.com/"
 
 
-def save_state(keep):
-    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-    with open(STATE_FILE, "w") as f:
-        json.dump(keep.dump(), f)
+def _js_string(value):
+    return json.dumps(value, ensure_ascii=False)
 
 
-def cmd_list(keep, args):
-    """List notes."""
-    pinned_only = "--pinned" in args
-    include_archived = "--archived" in args
-    limit = 20
-    for i, a in enumerate(args):
-        if a == "--limit" and i + 1 < len(args):
-            limit = int(args[i + 1])
-
-    notes = keep.find(
-        pinned=True if pinned_only else None,
-        archived=True if include_archived else False,
-        trashed=False,
+async def get_keep_page_ws():
+    """Find the Keep page WebSocket URL."""
+    resp = urllib.request.urlopen(f"{CDP_URL}/json/list")
+    pages = json.loads(resp.read())
+    for page in pages:
+        if page.get("type") != "page":
+            continue
+        url = page.get("url", "")
+        if "keep.google.com" in url:
+            return page["webSocketDebuggerUrl"]
+    raise RuntimeError(
+        "Google Keep page not found in Chrome. Run ~/keep-start.sh and log in first."
     )
 
-    print("=== Notes ===")
-    for i, note in enumerate(notes):
-        if i >= limit:
-            break
-        kind = "list" if hasattr(note, "items") and callable(getattr(note, "items", None)) is False else "note"
+
+class KeepCDP:
+    def __init__(self):
+        self.ws = None
+        self.pending = {}
+        self.reader_task = None
+
+    async def connect(self):
+        ws_url = await get_keep_page_ws()
+        self.ws = await websockets.connect(ws_url, max_size=50 * 1024 * 1024)
+        self.reader_task = asyncio.create_task(self._reader())
+
+    async def _reader(self):
         try:
-            items = note.items if hasattr(note, "items") else None
-            if items:
-                kind = "list"
+            async for raw in self.ws:
+                msg = json.loads(raw)
+                mid = msg.get("id")
+                if mid and mid in self.pending:
+                    self.pending[mid].set_result(msg)
         except Exception:
             pass
-        pinned = " [pinned]" if note.pinned else ""
-        print(f"  {i+1}. {note.title or '(untitled)'}{pinned}  ({note.id})")
+
+    async def evaluate(self, expression, timeout=20):
+        mid = random.randint(10000, 99999)
+        req = {
+            "id": mid,
+            "method": "Runtime.evaluate",
+            "params": {
+                "expression": expression,
+                "awaitPromise": True,
+                "returnByValue": True,
+            },
+        }
+        fut = asyncio.get_event_loop().create_future()
+        self.pending[mid] = fut
+        await self.ws.send(json.dumps(req))
+        resp = await asyncio.wait_for(fut, timeout=timeout)
+        self.pending.pop(mid, None)
+        if "exceptionDetails" in resp.get("result", {}):
+            raise RuntimeError(json.dumps(resp["result"]["exceptionDetails"], ensure_ascii=False))
+        return resp.get("result", {}).get("result", {}).get("value")
+
+    async def close(self):
+        if self.reader_task:
+            self.reader_task.cancel()
+        if self.ws:
+            await self.ws.close()
 
 
-def cmd_read(keep, note_id):
-    """Read a note by ID."""
-    note = keep.get(note_id)
-    if not note:
-        raise RuntimeError(f"Note not found: {note_id}")
-
-    print(f"=== {note.title or '(untitled)'} ===")
-    print(f"ID: {note.id}")
-    print(f"Pinned: {note.pinned}")
-
-    # Check if it's a list
-    try:
-        items = list(note.items)
-        if items:
-            print()
-            for item in items:
-                check = "[x]" if item.checked else "[ ]"
-                print(f"  {check} {item.text}")
+async def ensure_keep_ready(cdp):
+    """Ensure Keep is open and loaded."""
+    status = await cdp.evaluate(
+        """
+        (async () => {
+            if (!location.href.startsWith('https://keep.google.com')) {
+                location.href = 'https://keep.google.com/';
+                return 'navigating';
+            }
+            if (document.body.innerText.includes('Google Keep')) {
+                return 'ready';
+            }
+            return 'loading';
+        })()
+        """
+    )
+    if status == "navigating":
+        await asyncio.sleep(5)
+    for _ in range(20):
+        ready = await cdp.evaluate(
+            """
+            (() => {
+                const body = document.body.innerText || '';
+                if (body.includes('Sign in') && body.includes('Google')) return 'signin';
+                if (
+                    body.includes('Take a note') ||
+                    body.includes('メモを入力') ||
+                    body.includes('検索') ||
+                    body.includes('Search') ||
+                    body.includes('Keep') ||
+                    document.querySelector('[role="textbox"]') ||
+                    document.querySelector('input[aria-label*="検索"], input[aria-label*="Search"]')
+                ) return 'ready';
+                return 'loading';
+            })()
+            """
+        )
+        if ready == "ready":
             return
-    except (AttributeError, TypeError):
-        pass
-
-    if note.text:
-        print()
-        print(note.text)
+        if ready == "signin":
+            raise RuntimeError("Google Keep is not logged in. Use VNC and sign in first.")
+        await asyncio.sleep(1)
+    raise RuntimeError("Google Keep did not finish loading.")
 
 
-def cmd_search(keep, query, args):
-    """Search notes by text."""
-    limit = 20
-    for i, a in enumerate(args):
-        if a == "--limit" and i + 1 < len(args):
-            limit = int(args[i + 1])
-
-    notes = keep.find(query=query, archived=False, trashed=False)
-
-    print(f"=== Search: '{query}' ===")
-    count = 0
-    for note in notes:
-        if count >= limit:
-            break
-        pinned = " [pinned]" if note.pinned else ""
-        preview = (note.text or "")[:60].replace("\n", " ")
-        print(f"  {count+1}. {note.title or '(untitled)'}{pinned}  ({note.id})")
-        if preview:
-            print(f"     {preview}")
-        count += 1
-    if count == 0:
-        print("  (no results)")
-
-
-def cmd_create(keep, title, body=""):
-    """Create a new note."""
-    note = keep.createNote(title, body)
-    keep.sync()
-    save_state(keep)
-    print(f"Created: {note.title}  ({note.id})")
+async def list_notes(cdp, limit=20):
+    result = await cdp.evaluate(
+        f"""
+        (() => {{
+            const textboxes = [...document.querySelectorAll('[role="textbox"]')];
+            const notes = [];
+            for (const box of textboxes) {{
+                const title = (box.innerText || '').trim();
+                if (!title) continue;
+                const root = box.closest('[jscontroller], [style*="transform"], [tabindex]') || box.parentElement;
+                const text = root ? (root.innerText || '').trim() : title;
+                const lines = text.split(/\\n+/).map(s => s.trim()).filter(Boolean);
+                if (!lines.length) continue;
+                const preview = lines.slice(1, 5).join(' | ');
+                notes.push({{ title, preview }});
+                if (notes.length >= {limit}) break;
+            }}
+            return notes;
+        }})()
+        """
+    )
+    print("=== Notes ===")
+    for i, note in enumerate(result or [], 1):
+        preview = f" :: {note['preview']}" if note.get("preview") else ""
+        print(f"  {i}. {note['title']}{preview}")
 
 
-def cmd_create_list(keep, title, items_str):
-    """Create a checklist. Items separated by comma."""
-    items = [(item.strip(), False) for item in items_str.split(",") if item.strip()]
-    note = keep.createList(title, items)
-    keep.sync()
-    save_state(keep)
-    print(f"Created list: {note.title}  ({note.id})")
+async def search_notes(cdp, query):
+    safe_query = _js_string(query)
+    await cdp.evaluate(
+        f"""
+        (async () => {{
+            const query = {safe_query};
+            const input = document.querySelector('input[aria-label*="Search"], input[aria-label*="検索"]');
+            if (!input) return 'search_input_not_found';
+            input.focus();
+            input.value = query;
+            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            input.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }}));
+            input.dispatchEvent(new KeyboardEvent('keyup', {{ key: 'Enter', bubbles: true }}));
+            return 'ok';
+        }})()
+        """
+    )
+    await asyncio.sleep(2)
+    await list_notes(cdp, limit=20)
 
 
-def usage():
-    print("""Usage: keep-cli.py <command> [args]
+async def reset_view(cdp):
+    await cdp.evaluate(
+        """
+        (() => {
+            const search = document.querySelector('input[aria-label*="検索"], input[aria-label*="Search"]');
+            if (search) {
+                search.focus();
+                search.value = '';
+                search.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            return 'ok';
+        })()
+        """
+    )
 
-Commands:
-  list [--pinned] [--archived] [--limit N]   List notes
-  read <note_id>                              Read a note
-  search <query> [--limit N]                  Search notes
-  create <title> [body]                       Create a text note
-  create-list <title> "item1, item2, ..."     Create a checklist
 
-Config: ~/.config/agent-tools/config.json (keep.email, keep.master_token)""")
-    sys.exit(1)
+async def open_note(cdp, target):
+    await reset_view(cdp)
+    safe_target = _js_string(target)
+    result = await cdp.evaluate(
+        f"""
+        (async () => {{
+            const target = {safe_target};
+            const activeTitle = [...document.querySelectorAll('[role="textbox"][contenteditable="true"]')]
+                .find(e => getComputedStyle(e).display !== 'none' && (e.innerText || '').trim());
+            if (activeTitle && (activeTitle.innerText || '').trim() === target) {{
+                return target;
+            }}
+            const closeBtn = [...document.querySelectorAll('div[role="button"],button')].find(
+                e => /閉じる|Close/.test((e.getAttribute('aria-label') || '') + ' ' + (e.innerText || ''))
+            );
+            if (closeBtn) {{
+                closeBtn.click();
+                await new Promise(r => setTimeout(r, 500));
+            }}
+
+            const cards = [...document.querySelectorAll('[role="textbox"][contenteditable="false"]')];
+            let best = null;
+            let bestText = '';
+            for (const card of cards) {{
+                const title = (card.innerText || '').trim();
+                if (!title) continue;
+                const root = card.closest('[jscontroller], [style*="transform"], [tabindex]') || card.parentElement;
+                const text = ((root && root.innerText) || card.innerText || '').trim();
+                if (!text) continue;
+                if (title === target) {{
+                    best = root || card;
+                    bestText = text;
+                    break;
+                }}
+                if (!best && text.includes(target) && (!bestText || text.length < bestText.length)) {{
+                    best = root || card;
+                    bestText = text;
+                }}
+            }}
+            if (!best) return 'not_found';
+            best.click();
+            await new Promise(r => setTimeout(r, 800));
+            return bestText;
+        }})()
+        """
+    )
+    if result == "not_found":
+        raise RuntimeError(f"Note not found: {target}")
+    await asyncio.sleep(1)
 
 
-def main():
+async def read_current_note(cdp):
+    result = await cdp.evaluate(
+        """
+        (() => {
+            const activeTitle = [...document.querySelectorAll('[role="textbox"][contenteditable="true"]')]
+                .find(e => getComputedStyle(e).display !== 'none' && (e.innerText || '').trim());
+            if (!activeTitle) return null;
+
+            const root = activeTitle.closest('.IZ65Hb-s2gQvd') ||
+                activeTitle.closest('[jscontroller]') ||
+                activeTitle.parentElement;
+            const title = (activeTitle.innerText || '').trim();
+
+            const listItems = [...root.querySelectorAll('[contenteditable="true"][aria-label="リストアイテム"]')].map(item => {
+                const row = item.closest('.MPu53c-bN97Pc-sM5MNb') || item.parentElement;
+                const checkbox = row ? row.querySelector('[role="checkbox"]') : null;
+                return {
+                    text: (item.innerText || '').trim(),
+                    checked: checkbox ? checkbox.getAttribute('aria-checked') === 'true' : false,
+                };
+            }).filter(item => item.text);
+
+            const body = listItems.length
+                ? listItems.map(item => (item.checked ? '[x] ' : '[ ] ') + item.text).join('\\n')
+                : (root.innerText || '')
+                    .split(/\\n+/)
+                    .map(s => s.trim())
+                    .filter(Boolean)
+                    .filter(s => s !== title && s !== '固定済み' && s !== 'その他' && s !== '閉じる')
+                    .join('\\n');
+
+            return { title, body };
+        })()
+        """
+    )
+    if not result:
+        print("(note not open)")
+        return
+    print(f"=== {result.get('title') or '(untitled)'} ===")
+    if result.get("body"):
+        print(result["body"])
+
+
+async def create_note(cdp, title, body):
+    note_text = title if not body else f"{title}\n\n{body}"
+    safe_text = _js_string(note_text)
+    result = await cdp.evaluate(
+        f"""
+        (async () => {{
+            if (!location.href.startsWith('https://keep.google.com')) {{
+                location.href = 'https://keep.google.com/';
+                await new Promise(r => setTimeout(r, 3000));
+            }}
+
+            const closeBtn = [...document.querySelectorAll('div[role="button"],button')].find(
+                e => /閉じる|Close/.test((e.getAttribute('aria-label') || '') + ' ' + (e.innerText || ''))
+            );
+            if (closeBtn) {{
+                closeBtn.click();
+                await new Promise(r => setTimeout(r, 500));
+            }}
+
+            const search = document.querySelector('input[aria-label*="検索"], input[aria-label*="Search"]');
+            if (search) {{
+                search.value = '';
+                search.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                await new Promise(r => setTimeout(r, 300));
+            }}
+            const takeNote = [...document.querySelectorAll('div, button')].find(
+                el => /Take a note|メモを入力/.test((el.getAttribute('aria-label') || '') + ' ' + (el.innerText || ''))
+            );
+            if (!takeNote) return 'take_note_not_found';
+            takeNote.click();
+            await new Promise(r => setTimeout(r, 500));
+
+            const visibleEditors = [...document.querySelectorAll('[contenteditable="true"]')]
+                .filter(el => getComputedStyle(el).display !== 'none');
+            const bodyBox = visibleEditors[0];
+            const closeButton = [...document.querySelectorAll('button, div[role="button"]')].find(
+                el => /Close|閉じる/.test((el.getAttribute('aria-label') || '') + ' ' + (el.innerText || ''))
+            );
+
+            if (!bodyBox || !closeButton) return 'editor_not_found';
+
+            bodyBox.focus();
+            bodyBox.innerText = {safe_text};
+            bodyBox.dispatchEvent(new InputEvent('input', {{ bubbles: true, data: {safe_text} }}));
+
+            await new Promise(r => setTimeout(r, 800));
+            closeButton.click();
+            return 'created';
+        }})()
+        """
+    )
+    if result != "created":
+        raise RuntimeError(f"Failed to create note: {result}")
+    print(f"Created: {title}")
+
+
+async def dump_page(cdp):
+    result = await cdp.evaluate("document.body.innerText.substring(0, 15000)")
+    print(result or "")
+
+
+async def main():
     if len(sys.argv) < 2:
-        usage()
+        print("Usage: keep-cli.py <command> [args]")
+        print()
+        print("Commands:")
+        print("  list [--limit N]            List visible notes")
+        print("  search <query>              Search notes")
+        print("  open <query>                Open a note by partial match")
+        print("  read                        Read currently open note")
+        print("  create <title> [body]       Create a text note")
+        print("  dump                        Dump page text (debug)")
+        print()
+        print("Start Chrome first: ~/keep-start.sh")
+        return
 
     cmd = sys.argv[1]
-    keep = get_keep()
-
+    cdp = KeepCDP()
+    await cdp.connect()
     try:
+        await ensure_keep_ready(cdp)
         if cmd == "list":
-            cmd_list(keep, sys.argv[2:])
+            limit = 20
+            if len(sys.argv) >= 4 and sys.argv[2] == "--limit":
+                limit = int(sys.argv[3])
+            await list_notes(cdp, limit=limit)
+        elif cmd == "search" and len(sys.argv) >= 3:
+            await search_notes(cdp, " ".join(sys.argv[2:]))
+        elif cmd == "open" and len(sys.argv) >= 3:
+            await open_note(cdp, " ".join(sys.argv[2:]))
+            await read_current_note(cdp)
         elif cmd == "read":
-            if len(sys.argv) < 3:
-                usage()
-            cmd_read(keep, sys.argv[2])
-        elif cmd == "search":
-            if len(sys.argv) < 3:
-                usage()
-            cmd_search(keep, sys.argv[2], sys.argv[3:])
-        elif cmd == "create":
-            if len(sys.argv) < 3:
-                usage()
+            await read_current_note(cdp)
+        elif cmd == "create" and len(sys.argv) >= 3:
             title = sys.argv[2]
-            body = sys.argv[3] if len(sys.argv) > 3 else ""
-            cmd_create(keep, title, body)
-        elif cmd == "create-list":
-            if len(sys.argv) < 4:
-                usage()
-            cmd_create_list(keep, sys.argv[2], sys.argv[3])
+            body = sys.argv[3] if len(sys.argv) >= 4 else ""
+            await create_note(cdp, title, body)
+        elif cmd == "dump":
+            await dump_page(cdp)
         else:
             print(f"Unknown command: {cmd}")
-            usage()
+            sys.exit(1)
     finally:
-        save_state(keep)
+        await cdp.close()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

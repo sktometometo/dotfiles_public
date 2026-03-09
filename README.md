@@ -53,33 +53,30 @@ gcalcli --client-id=<client_id>.apps.googleusercontent.com init
 
 #### Google Keep (keep-cli.py)
 
-1. Google アカウントで 2 段階認証を有効化
-2. [アプリパスワード](https://myaccount.google.com/apppasswords) を生成
-3. マスタートークンを取得:
+1. 前提パッケージをインストール:
 
 ```bash
-python3 -c "
-from gpsoauth import perform_master_login
-email = input('Email: ')
-password = input('App Password: ')
-result = perform_master_login(email, password)
-token = result.get('Token')
-if token:
-    print(f'Master token: {token}')
-else:
-    print(f'Error: {result}')
-"
+sudo apt install tigervnc-standalone-server xfce4 dbus-x11 google-chrome-stable
+pip3 install --user --break-system-packages websockets
 ```
 
-4. `~/.config/agent-tools/config.json` に記述:
+2. VNC + Chrome を起動:
 
-```json
-{
-  "keep": {
-    "email": "<email>",
-    "master_token": "<token>"
-  }
-}
+```bash
+~/keep-start.sh
+```
+
+3. VNC で接続して Google Keep にログイン:
+
+```bash
+ssh -L 5901:localhost:5901 <host>   # リモートの場合
+vncviewer localhost:5901
+```
+
+4. ログイン完了後、CLI で操作:
+
+```bash
+python3 ~/keep-cli.py list
 ```
 
 #### OneNote (onenote-cli.py)
@@ -110,7 +107,7 @@ else:
 1. 前提パッケージをインストール:
 
 ```bash
-sudo apt install tigervnc-standalone-server google-chrome-stable
+sudo apt install tigervnc-standalone-server xfce4 dbus-x11 google-chrome-stable
 ```
 
 2. VNC + Chrome を起動:
@@ -141,7 +138,7 @@ python3 ~/teams-cli.py chats
 | `~/.config/agent-tools/config.json` | OneNote, Teams, Keep の認証情報・設定 |
 | `~/.config/himalaya/config.toml` | himalaya の IMAP/SMTP 設定 |
 | `~/.local/share/gcalcli/oauth` | gcalcli の OAuth トークン |
-| `~/.config/agent-tools/keep-state.json` | gkeepapi の同期キャッシュ |
+| `/tmp/chrome-keep` | Google Keep 用 Chrome プロファイル |
 
 テンプレート: [agents/config.example.json](agents/config.example.json)
 

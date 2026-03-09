@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import time
+import html
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -137,6 +138,47 @@ class OneNoteAPI:
                 body = e.read().decode("utf-8", errors="replace")
                 raise RuntimeError(f"API error {e.code}: {body}")
 
+    def _api_post(self, path, body, content_type="application/json", accept="application/json"):
+        token = self._load_token()
+        url = f"{GRAPH_BASE}/{path}"
+        for attempt in range(2):
+            req = urllib.request.Request(url, data=body, method="POST")
+            req.add_header("Authorization", f"Bearer {token}")
+            req.add_header("Content-Type", content_type)
+            req.add_header("Accept", accept)
+            try:
+                resp = urllib.request.urlopen(req)
+                if accept == "application/json":
+                    return json.loads(resp.read())
+                return resp.read().decode("utf-8", errors="replace")
+            except urllib.error.HTTPError as e:
+                if e.code == 401 and attempt == 0:
+                    token = self._refresh_token()
+                    continue
+                body_text = e.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"API error {e.code}: {body_text}")
+
+    def _api_patch(self, path, body, content_type="application/json", accept="application/json"):
+        token = self._load_token()
+        url = f"{GRAPH_BASE}/{path}"
+        for attempt in range(2):
+            req = urllib.request.Request(url, data=body, method="PATCH")
+            req.add_header("Authorization", f"Bearer {token}")
+            req.add_header("Content-Type", content_type)
+            req.add_header("Accept", accept)
+            try:
+                resp = urllib.request.urlopen(req)
+                if accept == "application/json":
+                    payload = resp.read()
+                    return json.loads(payload) if payload else None
+                return resp.read().decode("utf-8", errors="replace")
+            except urllib.error.HTTPError as e:
+                if e.code == 401 and attempt == 0:
+                    token = self._refresh_token()
+                    continue
+                body_text = e.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"API error {e.code}: {body_text}")
+
     def list_notebooks(self):
         data = self._api_get("notebooks", {"$select": "id,displayName"})
         return data.get("value", [])
@@ -159,6 +201,40 @@ class OneNoteAPI:
         pid = encode_id(page_id)
         html = self._api_get(f"pages/{pid}/content", accept="text/html")
         return html_to_text(html)
+
+    def create_page(self, section_id, title, body_html, created_iso):
+        sid = encode_id(section_id)
+        doc = f"""<!DOCTYPE html>
+<html>
+  <head>
+    <title>{html.escape(title)}</title>
+    <meta name="created" content="{html.escape(created_iso)}" />
+  </head>
+  <body>
+{body_html}
+  </body>
+</html>
+"""
+        return self._api_post(
+            f"sections/{sid}/pages",
+            doc.encode("utf-8"),
+            content_type="application/xhtml+xml",
+        )
+
+    def append_to_page_body(self, page_id, body_html):
+        pid = encode_id(page_id)
+        commands = [
+            {
+                "target": "body",
+                "action": "append",
+                "content": body_html,
+            }
+        ]
+        self._api_patch(
+            f"pages/{pid}/content",
+            json.dumps(commands).encode("utf-8"),
+            content_type="application/json",
+        )
 
     def resolve_notebook(self, name):
         """Resolve notebook name/alias to ID."""
@@ -306,6 +382,26 @@ def cmd_search(api, query, notebook_name=None):
         print(f"  {i}. [{r['section']}] {r['title']}  (modified: {r['modified']})  ({r['id']})")
 
 
+def cmd_create_page(api, section_name, title, notebook_name=None, body_file=None):
+    nid = api.resolve_notebook(notebook_name) if notebook_name else None
+    sid = api.resolve_section(section_name, nid)
+    if body_file:
+        with open(os.path.expanduser(body_file)) as f:
+            body_html = f.read()
+    else:
+        body_html = "<p></p>"
+    created_iso = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
+    page = api.create_page(sid, title, body_html, created_iso)
+    print(f"Created page: {page.get('title', title)}  ({page.get('id', '?')})")
+
+
+def cmd_append_body(api, page_id, body_file):
+    with open(os.path.expanduser(body_file)) as f:
+        body_html = f.read()
+    api.append_to_page_body(page_id, body_html)
+    print(f"Updated page: {page_id}")
+
+
 def usage():
     print("""Usage: onenote-cli.py <command> [args]
 
@@ -316,6 +412,10 @@ Commands:
   pages <section> [--notebook NB]   List pages (name or ID)
   read <page_id>                    Read page content as text
   search <query> [--notebook NB]    Search pages by title
+  create-page <section> <title> [--notebook NB] [--body-file PATH]
+                                    Create a page from HTML body content
+  append-body <page_id> --body-file PATH
+                                    Append HTML content to an existing page body
 
 Config: ~/.config/agent-tools/config.json
 Environment:
@@ -373,6 +473,26 @@ def main():
             else:
                 i += 1
         cmd_search(api, sys.argv[2], nb)
+    elif cmd == "create-page":
+        if len(sys.argv) < 4:
+            usage()
+        nb = None
+        body_file = None
+        i = 4
+        while i < len(sys.argv):
+            if sys.argv[i] == "--notebook" and i + 1 < len(sys.argv):
+                nb = sys.argv[i + 1]
+                i += 2
+            elif sys.argv[i] == "--body-file" and i + 1 < len(sys.argv):
+                body_file = sys.argv[i + 1]
+                i += 2
+            else:
+                i += 1
+        cmd_create_page(api, sys.argv[2], sys.argv[3], nb, body_file)
+    elif cmd == "append-body":
+        if len(sys.argv) < 5 or sys.argv[3] != "--body-file":
+            usage()
+        cmd_append_body(api, sys.argv[2], sys.argv[4])
     else:
         print(f"Unknown command: {cmd}")
         usage()

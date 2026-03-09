@@ -11,7 +11,7 @@ echo "Setting up agent tools from $AGENTS_DIR"
 # ── Symlinks ──
 echo ""
 echo "=== Symlinks ==="
-for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py gdocs-cli.py; do
+for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py keep-start.sh gdocs-cli.py; do
     src="$AGENTS_DIR/$f"
     dst="$HOME/$f"
     if [ -f "$src" ]; then
@@ -58,14 +58,14 @@ else
     fi
 fi
 
-# gkeepapi (Google Keep)
-if python3 -c "import gkeepapi" &>/dev/null; then
-    echo "  gkeepapi: already installed"
+# websockets (Teams / Keep CLI dependency)
+if python3 -c "import websockets" &>/dev/null; then
+    echo "  websockets: already installed"
 else
-    read -p "  Install gkeepapi (Google Keep)? [y/N] " answer
+    read -p "  Install websockets (Teams / Keep CLI dependency)? [y/N] " answer
     if [ "$answer" = "y" ]; then
-        pip3 install --user --break-system-packages gkeepapi gpsoauth
-        echo "  gkeepapi + gpsoauth installed"
+        pip3 install --user --break-system-packages websockets
+        echo "  websockets installed"
     fi
 fi
 
@@ -80,14 +80,38 @@ else
     fi
 fi
 
-# websockets (Teams CLI dependency)
-if python3 -c "import websockets" &>/dev/null; then
-    echo "  websockets: already installed"
+# GUI packages for Teams / Keep browser automation
+missing_gui=()
+for cmd in google-chrome vncserver startxfce4 dbus-launch; do
+    if ! command -v "$cmd" &>/dev/null; then
+        missing_gui+=("$cmd")
+    fi
+done
+
+if [ "${#missing_gui[@]}" -eq 0 ]; then
+    echo "  browser automation deps: already installed"
 else
-    read -p "  Install websockets (Teams CLI dependency)? [y/N] " answer
+    echo "  browser automation deps missing: ${missing_gui[*]}"
+    echo "    Install with: sudo apt install tigervnc-standalone-server xfce4 dbus-x11 google-chrome-stable"
+    read -p "  Install browser automation deps on this host? [y/N] " answer
     if [ "$answer" = "y" ]; then
-        pip3 install --user --break-system-packages websockets
-        echo "  websockets installed"
+        sudo apt update
+        sudo apt install -y tigervnc-standalone-server xfce4 dbus-x11
+        if apt-cache show google-chrome-stable >/dev/null 2>&1; then
+            sudo apt install -y google-chrome-stable
+        else
+            chrome_deb="/tmp/google-chrome-stable_current_amd64.deb"
+            curl -fsSL -o "$chrome_deb" https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+            sudo apt install -y "$chrome_deb"
+        fi
+        echo "  browser automation deps installed"
+    else
+        read -p "  Show browser automation setup help (Teams / Keep)? [y/N] " answer
+        if [ "$answer" = "y" ]; then
+            echo "    After install:"
+            echo "      ~/teams-start.sh   # Teams"
+            echo "      ~/keep-start.sh    # Google Keep"
+        fi
     fi
 fi
 
