@@ -67,6 +67,29 @@ class TeamsCDP:
         del self.pending[mid]
         return resp.get("result", {}).get("result", {}).get("value", "")
 
+    async def cdp_call(self, method, params=None, timeout=15):
+        """Send a raw CDP command."""
+        mid = random.randint(10000, 99999)
+        req = {"id": mid, "method": method, "params": params or {}}
+        fut = asyncio.get_event_loop().create_future()
+        self.pending[mid] = fut
+        await self.ws.send(json.dumps(req))
+        resp = await asyncio.wait_for(fut, timeout=timeout)
+        del self.pending[mid]
+        return resp
+
+    async def insert_text(self, text):
+        """Insert text at the current focus using CDP Input.insertText."""
+        await self.cdp_call("Input.insertText", {"text": text})
+
+    async def click_at(self, x, y):
+        """Click at coordinates using CDP Input.dispatchMouseEvent."""
+        for event_type in ("mouseMoved", "mousePressed", "mouseReleased"):
+            params = {"type": event_type, "x": x, "y": y, "button": "left"}
+            if event_type in ("mousePressed", "mouseReleased"):
+                params["clickCount"] = 1
+            await self.cdp_call("Input.dispatchMouseEvent", params)
+
     async def close(self):
         if self.reader_task:
             self.reader_task.cancel()
@@ -354,6 +377,113 @@ async def goto_url(cdp, url, wait=8):
     await read_current_chat(cdp)
 
 
+async def post_to_channel(cdp, body, subject=None):
+    """Post a message to the currently open channel.
+
+    Args:
+        cdp: TeamsCDP instance.
+        body: Message body text.
+        subject: Optional subject line (creates a titled post).
+    """
+    # Click "チャネルで投稿" to open compose area
+    result = await cdp.evaluate("""
+        (() => {
+            const buttons = document.querySelectorAll('button');
+            for (const b of buttons) {
+                if (b.textContent.trim() === 'チャネルで投稿') {
+                    b.click();
+                    return 'ok';
+                }
+            }
+            return 'not_found';
+        })()
+    """)
+    if result == "not_found":
+        print("Error: 'チャネルで投稿' button not found. Is a channel open?", file=sys.stderr)
+        return False
+
+    await asyncio.sleep(2)
+
+    # Set subject if provided
+    if subject:
+        await cdp.evaluate("""
+            (() => {
+                const s = document.querySelector('input[placeholder*="件名"]');
+                if (s) { s.focus(); return 'ok'; }
+                return 'no_subject_field';
+            })()
+        """)
+        await asyncio.sleep(0.3)
+        await cdp.insert_text(subject)
+        await asyncio.sleep(0.5)
+
+    # Focus editor and insert body
+    focus_result = await cdp.evaluate("""
+        (() => {
+            const editor = document.querySelector('[role="textbox"][contenteditable="true"]');
+            if (!editor) return 'no_editor';
+            editor.focus();
+            return 'ok';
+        })()
+    """)
+    if focus_result == "no_editor":
+        print("Error: compose editor not found", file=sys.stderr)
+        return False
+
+    await asyncio.sleep(0.3)
+    await cdp.insert_text(body)
+    await asyncio.sleep(1)
+
+    # Verify content was inserted
+    editor_len = await cdp.evaluate("""
+        (() => {
+            const editor = document.querySelector('[role="textbox"][contenteditable="true"]');
+            return editor ? String(editor.textContent.length) : '0';
+        })()
+    """)
+    if editor_len == "0":
+        print("Error: body text was not inserted into editor", file=sys.stderr)
+        return False
+
+    # Click the send button (non-MenuButton 投稿)
+    btn_info = await cdp.evaluate("""
+        (() => {
+            const buttons = document.querySelectorAll('button');
+            for (const b of buttons) {
+                if (b.textContent.trim() === '投稿' && !b.className.includes('MenuButton')) {
+                    const rect = b.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        return JSON.stringify({x: rect.x + rect.width/2, y: rect.y + rect.height/2});
+                    }
+                }
+            }
+            return '';
+        })()
+    """)
+    if not btn_info:
+        print("Error: send button not found", file=sys.stderr)
+        return False
+
+    coords = json.loads(btn_info)
+    await cdp.click_at(coords["x"], coords["y"])
+    await asyncio.sleep(3)
+
+    # Verify compose area closed (= post was sent)
+    still_open = await cdp.evaluate("""
+        (() => {
+            const s = document.querySelectorAll('input[placeholder*="件名"]');
+            const e = document.querySelector('[role="textbox"][contenteditable="true"]');
+            return (s.length > 0 || (e && e.textContent.length > 0)) ? 'open' : 'closed';
+        })()
+    """)
+    if still_open == "open":
+        print("Warning: compose area may still be open — post might not have been sent", file=sys.stderr)
+        return False
+
+    print("Posted successfully")
+    return True
+
+
 async def get_page_text(cdp):
     """Dump the full page text (debug)."""
     result = await cdp.evaluate("document.body.innerText.substring(0, 10000)")
@@ -372,8 +502,12 @@ async def main():
         print("  team <team> [channel]    Open a team channel (default: 一般)")
         print("  read                     Read current chat/channel messages")
         print("  open <name>              Open a chat by name and read it")
+        print("  post <body>              Post a message to the current channel")
+        print("  post -s <subject> <body> Post with a subject line")
         print("  goto <url>               Navigate to a Teams URL and read it")
         print("  dump                     Dump full page text (debug)")
+        print()
+        print("The post command reads body from argument or stdin (if '-').")
         print()
         print("Config: ~/.config/agent-tools/config.json")
         return
@@ -409,6 +543,16 @@ async def main():
         elif cmd == "goto" and len(sys.argv) >= 3:
             url = sys.argv[2]
             await goto_url(cdp, url)
+        elif cmd == "post" and len(sys.argv) >= 3:
+            subject = None
+            args = sys.argv[2:]
+            if args[0] == "-s" and len(args) >= 3:
+                subject = args[1]
+                args = args[2:]
+            body_arg = " ".join(args)
+            if body_arg == "-":
+                body_arg = sys.stdin.read()
+            await post_to_channel(cdp, body_arg, subject=subject)
         elif cmd == "dump":
             await get_page_text(cdp)
         else:
