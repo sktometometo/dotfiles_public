@@ -11,7 +11,7 @@ echo "Setting up agent tools from $AGENTS_DIR"
 # ── Symlinks ──
 echo ""
 echo "=== Symlinks ==="
-for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py; do
+for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py gdocs-cli.py; do
     src="$AGENTS_DIR/$f"
     dst="$HOME/$f"
     if [ -f "$src" ]; then
@@ -66,6 +66,17 @@ else
     if [ "$answer" = "y" ]; then
         pip3 install --user --break-system-packages gkeepapi gpsoauth
         echo "  gkeepapi + gpsoauth installed"
+    fi
+fi
+
+# google-api-python-client (Google Docs CLI)
+if python3 -c "import googleapiclient" &>/dev/null; then
+    echo "  google-api-python-client: already installed"
+else
+    read -p "  Install google-api-python-client (Google Docs CLI)? [y/N] " answer
+    if [ "$answer" = "y" ]; then
+        pip3 install --user --break-system-packages google-api-python-client google-auth-oauthlib
+        echo "  google-api-python-client + google-auth-oauthlib installed"
     fi
 fi
 
