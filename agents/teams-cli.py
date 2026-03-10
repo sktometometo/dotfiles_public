@@ -484,6 +484,95 @@ async def post_to_channel(cdp, body, subject=None):
     return True
 
 
+async def read_thread(cdp, query):
+    """Open a thread by matching query text, then read its replies."""
+    safe_query = query.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+
+    # Click the matching thread or "N 件の返信" link
+    click_result = await cdp.evaluate(f"""
+        (() => {{
+            const target = '{safe_query}';
+            // First try to find a clickable "N 件の返信" element near matching text
+            const allEls = document.querySelectorAll('*');
+            let threadButton = null;
+            let threadButtonLen = Infinity;
+            for (const el of allEls) {{
+                const text = el.textContent?.trim();
+                if (!text) continue;
+                // Match "件の返信" links
+                if (text.match(/^\\d+ 件の返信/) && el.closest && el.closest('[role="treeitem"], [class*="thread"], [data-tid*="thread"]')) {{
+                    // Check if a parent/sibling contains the query
+                    const parent = el.closest('[role="treeitem"]') || el.parentElement?.parentElement?.parentElement;
+                    if (parent && parent.textContent?.includes(target) && parent.textContent.length < threadButtonLen) {{
+                        threadButton = el;
+                        threadButtonLen = parent.textContent.length;
+                    }}
+                }}
+            }}
+            if (threadButton) {{
+                threadButton.click();
+                return 'clicked_reply_link';
+            }}
+            // Fallback: click on the thread post itself
+            const items = document.querySelectorAll('[role="treeitem"], [role="listitem"], [role="link"], a, button');
+            let best = null;
+            let bestLen = Infinity;
+            for (const item of items) {{
+                const text = item.textContent?.trim();
+                if (text?.includes(target) && text.length < bestLen) {{
+                    best = item;
+                    bestLen = text.length;
+                }}
+            }}
+            if (best) {{
+                best.click();
+                return 'clicked_thread';
+            }}
+            return 'not_found';
+        }})()
+    """)
+
+    if 'not_found' in click_result:
+        print(f"Thread not found: {query}")
+        return
+
+    await asyncio.sleep(3)
+
+    # Read thread panel content - it appears after the main channel content in the DOM
+    result = await cdp.evaluate("""
+        (() => {
+            const body = document.body.innerText;
+            // Thread panel typically appears as a second copy of content
+            // Find the thread panel area by looking for repeated content or specific markers
+            const maxLen = 30000;
+            return body.substring(0, maxLen);
+        })()
+    """)
+
+    # Extract thread panel content (appears after the main channel view)
+    # In threaded layout, the side panel content follows "コンテキスト メニューあり" markers
+    lines = result.split('\n')
+    # Find where the thread panel starts (after channel content ends)
+    panel_start = -1
+    context_menu_count = 0
+    for i, line in enumerate(lines):
+        if 'コンテキスト メニューあり' in line:
+            context_menu_count += 1
+            if context_menu_count >= 2:
+                panel_start = i + 1
+                break
+
+    if panel_start >= 0 and panel_start < len(lines):
+        panel_text = '\n'.join(lines[panel_start:])
+        # Remove trailing context menu markers
+        for marker in ['コンテキスト メニューあり', '送信先: スレッドのみ']:
+            panel_text = panel_text.replace(marker, '').strip()
+        print(panel_text)
+    else:
+        # Fallback: print everything
+        print(result)
+
+
 async def get_page_text(cdp):
     """Dump the full page text (debug)."""
     result = await cdp.evaluate("document.body.innerText.substring(0, 10000)")
@@ -504,6 +593,7 @@ async def main():
         print("  open <name>              Open a chat by name and read it")
         print("  post <body>              Post a message to the current channel")
         print("  post -s <subject> <body> Post with a subject line")
+        print("  thread <query>           Open a thread by matching text and read replies")
         print("  goto <url>               Navigate to a Teams URL and read it")
         print("  dump                     Dump full page text (debug)")
         print()
@@ -553,6 +643,9 @@ async def main():
             if body_arg == "-":
                 body_arg = sys.stdin.read()
             await post_to_channel(cdp, body_arg, subject=subject)
+        elif cmd == "thread" and len(sys.argv) >= 3:
+            query = " ".join(sys.argv[2:])
+            await read_thread(cdp, query)
         elif cmd == "dump":
             await get_page_text(cdp)
         else:
