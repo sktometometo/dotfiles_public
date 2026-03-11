@@ -77,6 +77,26 @@ def encode_id(oid):
     return oid.replace("!", "%21")
 
 
+def text_to_html(text):
+    """Convert plain text to HTML paragraphs."""
+    paragraphs = []
+    for line in text.split("\n"):
+        escaped = html.escape(line) if line.strip() else ""
+        paragraphs.append(f"<p>{escaped}</p>" if escaped else "<p><br/></p>")
+    return "\n".join(paragraphs)
+
+
+def read_content(text_arg, is_html=False):
+    """Read content from argument or stdin. Convert to HTML if needed."""
+    if text_arg == "-":
+        raw = sys.stdin.read()
+    else:
+        raw = text_arg
+    if is_html:
+        return raw
+    return text_to_html(raw)
+
+
 class OneNoteAPI:
     def __init__(self):
         self.token_data = None
@@ -221,20 +241,63 @@ class OneNoteAPI:
             content_type="application/xhtml+xml",
         )
 
-    def append_to_page_body(self, page_id, body_html):
+    def _api_delete(self, path):
+        token = self._load_token()
+        url = f"{GRAPH_BASE}/{path}"
+        for attempt in range(2):
+            req = urllib.request.Request(url, method="DELETE")
+            req.add_header("Authorization", f"Bearer {token}")
+            try:
+                resp = urllib.request.urlopen(req)
+                return
+            except urllib.error.HTTPError as e:
+                if e.code == 401 and attempt == 0:
+                    token = self._refresh_token()
+                    continue
+                if e.code == 204:
+                    return
+                body_text = e.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"API error {e.code}: {body_text}")
+
+    def get_page_html(self, page_id):
+        """Get raw HTML content of a page."""
         pid = encode_id(page_id)
-        commands = [
-            {
-                "target": "body",
-                "action": "append",
-                "content": body_html,
-            }
-        ]
+        return self._api_get(f"pages/{pid}/content", accept="text/html")
+
+    def patch_page(self, page_id, commands):
+        """Send PATCH commands to a page.
+
+        commands: list of dicts with keys: target, action, content, [position]
+        Actions: append, replace, insert, prepend
+        Targets: body, #<data-id>
+        Position (for insert only): before, after
+        """
+        pid = encode_id(page_id)
         self._api_patch(
             f"pages/{pid}/content",
             json.dumps(commands).encode("utf-8"),
             content_type="application/json",
         )
+
+    def append_to_page_body(self, page_id, body_html):
+        self.patch_page(page_id, [
+            {"target": "body", "action": "append", "content": body_html}
+        ])
+
+    def replace_element(self, page_id, target, content_html):
+        self.patch_page(page_id, [
+            {"target": target, "action": "replace", "content": content_html}
+        ])
+
+    def insert_element(self, page_id, target, content_html, position="after"):
+        self.patch_page(page_id, [
+            {"target": target, "action": "insert", "position": position,
+             "content": content_html}
+        ])
+
+    def delete_page(self, page_id):
+        pid = encode_id(page_id)
+        self._api_delete(f"pages/{pid}")
 
     def resolve_notebook(self, name):
         """Resolve notebook name/alias to ID."""
@@ -402,6 +465,77 @@ def cmd_append_body(api, page_id, body_file):
     print(f"Updated page: {page_id}")
 
 
+def cmd_read_html(api, page_id):
+    raw = api.get_page_html(page_id)
+    print(raw)
+
+
+def cmd_append(api, page_id, text, is_html=False):
+    content = read_content(text, is_html)
+    api.append_to_page_body(page_id, content)
+    print(f"Appended to page: {page_id}")
+
+
+def cmd_replace(api, page_id, target, text, is_html=False):
+    content = read_content(text, is_html)
+    api.replace_element(page_id, target, content)
+    print(f"Replaced {target} in page: {page_id}")
+
+
+def cmd_insert(api, page_id, target, text, position="after", is_html=False):
+    content = read_content(text, is_html)
+    api.insert_element(page_id, target, content, position)
+    print(f"Inserted {position} {target} in page: {page_id}")
+
+
+def cmd_delete_page(api, page_id):
+    api.delete_page(page_id)
+    print(f"Deleted page: {page_id}")
+
+
+def cmd_patch(api, page_id, commands_json):
+    if commands_json == "-":
+        commands_json = sys.stdin.read()
+    commands = json.loads(commands_json)
+    if isinstance(commands, dict):
+        commands = [commands]
+    api.patch_page(page_id, commands)
+    print(f"Patched page: {page_id}")
+
+
+def _parse_opts(argv, known_flags=None):
+    """Parse --key value options from argv. Returns (opts_dict, positional_args).
+
+    known_flags: dict of flag_name -> True for boolean flags (no value needed).
+    """
+    if known_flags is None:
+        known_flags = {}
+    opts = {}
+    positional = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg.startswith("--") and "=" in arg:
+            key, val = arg[2:].split("=", 1)
+            opts[key] = val
+            i += 1
+        elif arg.startswith("--"):
+            key = arg[2:]
+            if key in known_flags and known_flags[key] is True:
+                opts[key] = True
+                i += 1
+            elif i + 1 < len(argv):
+                opts[key] = argv[i + 1]
+                i += 2
+            else:
+                positional.append(arg)
+                i += 1
+        else:
+            positional.append(arg)
+            i += 1
+    return opts, positional
+
+
 def usage():
     print("""Usage: onenote-cli.py <command> [args]
 
@@ -411,11 +545,28 @@ Commands:
   sections <notebook>               List sections (name or ID)
   pages <section> [--notebook NB]   List pages (name or ID)
   read <page_id>                    Read page content as text
+  read-html <page_id>               Read page raw HTML (shows data-id attrs)
   search <query> [--notebook NB]    Search pages by title
   create-page <section> <title> [--notebook NB] [--body-file PATH]
                                     Create a page from HTML body content
+
+  Editing commands:
+  append <page_id> <text|->  [--html]
+                                    Append text to page body (- for stdin)
+  replace <page_id> <target> <text|-> [--html]
+                                    Replace element content (target: #data-id)
+  insert <page_id> <target> <text|-> [--position before|after] [--html]
+                                    Insert before/after element (default: after)
+  delete-page <page_id>             Delete a page
+  patch <page_id> <json|->          Send raw PATCH commands as JSON
+
+  Legacy:
   append-body <page_id> --body-file PATH
-                                    Append HTML content to an existing page body
+                                    Append HTML file to page body
+
+Targets for replace/insert:
+  body                              The page body element
+  #<data-id>                        Element by data-id (use read-html to find)
 
 Config: ~/.config/agent-tools/config.json
 Environment:
@@ -444,51 +595,57 @@ def main():
     elif cmd == "pages":
         if len(sys.argv) < 3:
             usage()
-        nb = None
-        top = 20
-        i = 3
-        while i < len(sys.argv):
-            if sys.argv[i] == "--notebook" and i + 1 < len(sys.argv):
-                nb = sys.argv[i + 1]
-                i += 2
-            elif sys.argv[i] == "--top" and i + 1 < len(sys.argv):
-                top = int(sys.argv[i + 1])
-                i += 2
-            else:
-                i += 1
-        cmd_pages(api, sys.argv[2], nb, top)
+        opts, pos = _parse_opts(sys.argv[3:])
+        cmd_pages(api, sys.argv[2], opts.get("notebook"), int(opts.get("top", 20)))
     elif cmd == "read":
         if len(sys.argv) < 3:
             usage()
         cmd_read(api, sys.argv[2])
+    elif cmd == "read-html":
+        if len(sys.argv) < 3:
+            usage()
+        cmd_read_html(api, sys.argv[2])
     elif cmd == "search":
         if len(sys.argv) < 3:
             usage()
-        nb = None
-        i = 3
-        while i < len(sys.argv):
-            if sys.argv[i] == "--notebook" and i + 1 < len(sys.argv):
-                nb = sys.argv[i + 1]
-                i += 2
-            else:
-                i += 1
-        cmd_search(api, sys.argv[2], nb)
+        opts, pos = _parse_opts(sys.argv[3:])
+        cmd_search(api, sys.argv[2], opts.get("notebook"))
     elif cmd == "create-page":
         if len(sys.argv) < 4:
             usage()
-        nb = None
-        body_file = None
-        i = 4
-        while i < len(sys.argv):
-            if sys.argv[i] == "--notebook" and i + 1 < len(sys.argv):
-                nb = sys.argv[i + 1]
-                i += 2
-            elif sys.argv[i] == "--body-file" and i + 1 < len(sys.argv):
-                body_file = sys.argv[i + 1]
-                i += 2
-            else:
-                i += 1
-        cmd_create_page(api, sys.argv[2], sys.argv[3], nb, body_file)
+        opts, pos = _parse_opts(sys.argv[4:])
+        cmd_create_page(api, sys.argv[2], sys.argv[3], opts.get("notebook"),
+                        opts.get("body-file"))
+    elif cmd == "append":
+        if len(sys.argv) < 3:
+            usage()
+        opts, pos = _parse_opts(sys.argv[3:], {"html": True})
+        text = pos[0] if pos else "-"
+        cmd_append(api, sys.argv[2], text, is_html="html" in opts)
+    elif cmd == "replace":
+        if len(sys.argv) < 4:
+            usage()
+        opts, pos = _parse_opts(sys.argv[3:], {"html": True})
+        target = pos[0] if pos else "body"
+        text = pos[1] if len(pos) > 1 else "-"
+        cmd_replace(api, sys.argv[2], target, text, is_html="html" in opts)
+    elif cmd == "insert":
+        if len(sys.argv) < 4:
+            usage()
+        opts, pos = _parse_opts(sys.argv[3:], {"html": True})
+        target = pos[0] if pos else "body"
+        text = pos[1] if len(pos) > 1 else "-"
+        position = opts.get("position", "after")
+        cmd_insert(api, sys.argv[2], target, text, position, is_html="html" in opts)
+    elif cmd == "delete-page":
+        if len(sys.argv) < 3:
+            usage()
+        cmd_delete_page(api, sys.argv[2])
+    elif cmd == "patch":
+        if len(sys.argv) < 3:
+            usage()
+        commands_json = sys.argv[3] if len(sys.argv) > 3 else "-"
+        cmd_patch(api, sys.argv[2], commands_json)
     elif cmd == "append-body":
         if len(sys.argv) < 5 or sys.argv[3] != "--body-file":
             usage()
