@@ -4,12 +4,16 @@
 import asyncio
 import json
 import os
-import random
 import sys
-import websockets
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+from chrome_cdp import ChromeCDP
 
 
-CDP_URL = "http://localhost:9222"
+CDP_URL = os.environ.get("TEAMS_CDP_URL", "http://localhost:9224")
 CONFIG_FILE = os.path.expanduser("~/.config/agent-tools/config.json")
 
 
@@ -24,133 +28,114 @@ def _load_teams_orgs():
 TEAMS_ORGS = _load_teams_orgs()
 
 
-async def get_teams_page_ws():
-    """Find the Teams page WebSocket URL."""
-    import urllib.request
-    resp = urllib.request.urlopen(f"{CDP_URL}/json/list")
-    pages = json.loads(resp.read())
-    for p in pages:
-        if p["type"] == "page" and "teams" in p["url"]:
-            return p["webSocketDebuggerUrl"]
-    raise RuntimeError("Teams page not found in Chrome. Is Chrome running with --remote-debugging-port=9222?")
-
-
-class TeamsCDP:
+class TeamsCDP(ChromeCDP):
     def __init__(self):
-        self.ws = None
-        self.pending = {}
-        self.reader_task = None
+        super().__init__(
+            CDP_URL,
+            lambda page: "teams" in page.get("url", "") or "teams" in page.get("title", "").lower(),
+        )
 
-    async def connect(self):
-        ws_url = await get_teams_page_ws()
-        self.ws = await websockets.connect(ws_url, max_size=50 * 1024 * 1024)
-        self.reader_task = asyncio.create_task(self._reader())
 
-    async def _reader(self):
-        try:
-            async for raw in self.ws:
-                msg = json.loads(raw)
-                mid = msg.get("id")
-                if mid and mid in self.pending:
-                    self.pending[mid].set_result(msg)
-        except Exception:
-            pass
+async def ensure_teams_ready(cdp):
+    """Wait until the Teams shell is visible enough for DOM scraping."""
+    for _ in range(20):
+        state = await cdp.evaluate(
+            """
+            (() => {
+                const body = document.body.innerText || '';
+                const title = document.title || '';
+                if (/sign in|login|サインイン/i.test(body) && !/Chat|Teams/i.test(title)) return 'signin';
+                if (body.includes('Chat') || body.includes('Chats') || body.includes('Teams and channels') || body.includes('チャット')) return 'ready';
+                return 'loading';
+            })()
+            """
+        )
+        if state == "ready":
+            return
+        if state == "signin":
+            raise RuntimeError("Teams is not logged in. Use VNC and sign in first.")
+        await asyncio.sleep(1)
+    raise RuntimeError("Teams did not finish loading.")
 
-    async def evaluate(self, expression, timeout=15):
-        mid = random.randint(10000, 99999)
-        req = {"id": mid, "method": "Runtime.evaluate",
-               "params": {"expression": expression, "awaitPromise": True}}
-        fut = asyncio.get_event_loop().create_future()
-        self.pending[mid] = fut
-        await self.ws.send(json.dumps(req))
-        resp = await asyncio.wait_for(fut, timeout=timeout)
-        del self.pending[mid]
-        return resp.get("result", {}).get("result", {}).get("value", "")
 
-    async def cdp_call(self, method, params=None, timeout=15):
-        """Send a raw CDP command."""
-        mid = random.randint(10000, 99999)
-        req = {"id": mid, "method": method, "params": params or {}}
-        fut = asyncio.get_event_loop().create_future()
-        self.pending[mid] = fut
-        await self.ws.send(json.dumps(req))
-        resp = await asyncio.wait_for(fut, timeout=timeout)
-        del self.pending[mid]
-        return resp
+def _normalize_name(text):
+    return (text or "").strip()
 
-    async def insert_text(self, text):
-        """Insert text at the current focus using CDP Input.insertText."""
-        await self.cdp_call("Input.insertText", {"text": text})
 
-    async def click_at(self, x, y):
-        """Click at coordinates using CDP Input.dispatchMouseEvent."""
-        for event_type in ("mouseMoved", "mousePressed", "mouseReleased"):
-            params = {"type": event_type, "x": x, "y": y, "button": "left"}
-            if event_type in ("mousePressed", "mouseReleased"):
-                params["clickCount"] = 1
-            await self.cdp_call("Input.dispatchMouseEvent", params)
+def _is_chat_section(text):
+    return _normalize_name(text).startswith(("Chats", "Chat", "チャット"))
 
-    async def close(self):
-        if self.reader_task:
-            self.reader_task.cancel()
-        if self.ws:
-            await self.ws.close()
+
+def _is_teams_section(text):
+    return _normalize_name(text).startswith(("Teams and channels", "Teams とチャネル"))
+
+
+async def _get_treeitems(cdp):
+    return await cdp.evaluate(
+        """
+        (() => {
+            return [...document.querySelectorAll('[role="treeitem"]')].map((item, index) => ({
+                index,
+                level: item.getAttribute('aria-level'),
+                expanded: item.getAttribute('aria-expanded'),
+                text: (item.innerText || '').trim().replace(/\\n+/g, ' | ')
+            }));
+        })()
+        """
+    )
 
 
 async def _ensure_teams_expanded(cdp):
     """Expand the 'Teams とチャネル' section if collapsed."""
-    await cdp.evaluate("""
+    await cdp.evaluate(
+        """
         (() => {
             const items = document.querySelectorAll('[role="treeitem"]');
             for (const item of items) {
-                const text = item.innerText?.trim();
-                if (text === 'Teams とチャネル' || text === 'Teams and Channels') {
+                const text = (item.innerText || '').trim();
+                if (text.startsWith('Teams とチャネル') || text.startsWith('Teams and channels')) {
                     if (item.getAttribute('aria-expanded') === 'false') {
                         item.click();
                     }
-                    return;
+                    return true;
                 }
             }
+            return false;
         })()
-    """)
+        """
+    )
     await asyncio.sleep(1)
 
 
 async def list_chats(cdp):
     """List recent chats."""
-    result = await cdp.evaluate("""
-        (() => {
-            const items = document.querySelectorAll('[role="treeitem"]');
-            const chats = [];
-            let inChat = false;
-            for (const item of items) {
-                const level = item.getAttribute('aria-level');
-                const text = item.innerText?.trim().replace(/\\n+/g, ' | ');
-                if (!text) continue;
-                // Chat section is level 2 under "チャット" parent
-                if (level === '1' && (text.startsWith('チャット') || text.startsWith('Chat'))) {
-                    inChat = true;
-                    continue;
-                }
-                if (level === '1' && inChat) break;
-                if (inChat && level === '2' && text.length < 200) {
-                    chats.push(text);
-                }
-                if (chats.length >= 30) break;
-            }
-            // Fallback if level-based didn't work
-            if (chats.length === 0) {
-                for (const item of items) {
-                    const text = item.innerText?.trim().replace(/\\n+/g, ' | ');
-                    if (text && text.length > 2 && text.length < 200) chats.push(text);
-                    if (chats.length >= 30) break;
-                }
-            }
-            return JSON.stringify(chats);
-        })()
-    """)
-    chats = json.loads(result)
+    items = await _get_treeitems(cdp)
+    chats = []
+    in_chats = False
+    for item in items:
+        text = _normalize_name(item.get("text"))
+        level = item.get("level")
+        if not text:
+            continue
+        if level == "1" and _is_chat_section(text):
+            in_chats = True
+            continue
+        if level == "1" and in_chats:
+            break
+        if in_chats and level == "2":
+            chats.append(text)
+
+    if not chats:
+        chats = [
+            _normalize_name(item.get("text"))
+            for item in items
+            if item.get("level") == "2" and _normalize_name(item.get("text")) and not _normalize_name(item.get("text")).startswith("See all your teams")
+        ][:30]
+
     print("=== Recent Chats ===")
+    if not chats:
+        print("  (no chats found; Teams UI may still be loading)")
+        return
     for i, chat in enumerate(chats, 1):
         print(f"  {i}. {chat}")
 
@@ -158,33 +143,30 @@ async def list_chats(cdp):
 async def list_teams(cdp):
     """List teams and channels from treeitem DOM."""
     await _ensure_teams_expanded(cdp)
-    result = await cdp.evaluate("""
-        (() => {
-            const items = document.querySelectorAll('[role="treeitem"]');
-            const teams = [];
-            let inTeams = false;
-            for (const item of items) {
-                const level = item.getAttribute('aria-level');
-                const expanded = item.getAttribute('aria-expanded');
-                const text = item.innerText?.trim().split('\\n')[0]?.trim();
-                if (!text) continue;
-                if (text === 'Teams とチャネル' || text === 'Teams and Channels') {
-                    inTeams = true;
-                    continue;
-                }
-                if (!inTeams) continue;
-                // level 2 = team, level 3 = channel
-                if (level === '2') {
-                    teams.push({type: 'team', name: text, expanded});
-                } else if (level === '3' && text !== 'すべてのチャネルを表示する') {
-                    teams.push({type: 'channel', name: text});
-                }
-            }
-            return JSON.stringify(teams);
-        })()
-    """)
-    items = json.loads(result)
+    treeitems = await _get_treeitems(cdp)
+    items = []
+    in_teams = False
+    for item in treeitems:
+        text = _normalize_name(item.get("text", "").split("|")[0])
+        level = item.get("level")
+        if not text:
+            continue
+        if level == "1" and _is_teams_section(item.get("text")):
+            in_teams = True
+            continue
+        if level == "1" and in_teams:
+            break
+        if not in_teams:
+            continue
+        if level == "2":
+            items.append({"type": "team", "name": text, "expanded": item.get("expanded")})
+        elif level == "3" and text not in ("すべてのチャネルを表示する", "See all your teams"):
+            items.append({"type": "channel", "name": text})
+
     print("=== Teams & Channels ===")
+    if not items:
+        print("  (no teams found; Teams UI may still be loading)")
+        return
     for item in items:
         if item["type"] == "team":
             exp = "+" if item.get("expanded") == "false" else "-"
@@ -613,6 +595,7 @@ async def main():
     await cdp.connect()
 
     try:
+        await ensure_teams_ready(cdp)
         if cmd == "org" and len(sys.argv) >= 3:
             await switch_org(cdp, sys.argv[2])
         elif cmd == "chats":

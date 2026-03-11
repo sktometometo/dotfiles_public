@@ -19,6 +19,7 @@ cd ~/dotfiles_public
 | himalaya | Gmail | `himalaya` | [gmail-access.md](agents/gmail-access.md) |
 | gcalcli | Google Calendar | `gcalcli` | [gcal-access.md](agents/gcal-access.md) |
 | keep-cli.py | Google Keep | `~/keep-cli.py` | [keep-access.md](agents/keep-access.md) |
+| chrome-site-cli.py | Generic Chrome Site | `~/chrome-site-cli.py` | [chrome-site-access.md](agents/chrome-site-access.md) |
 | onenote-cli.py | OneNote | `~/onenote-cli.py` | [onenote-access.md](agents/onenote-access.md) |
 | teams-cli.py | Teams | `~/teams-cli.py` | [teams-access.md](agents/teams-access.md) |
 
@@ -73,6 +74,8 @@ ssh -L 5901:localhost:5901 <host>   # リモートの場合
 vncviewer localhost:5901
 ```
 
+Keep は専用 Chrome プロファイル `/tmp/chrome-keep`、CDP ポート `9223` を使う。
+
 4. ログイン完了後、CLI で操作:
 
 ```bash
@@ -119,9 +122,11 @@ sudo apt install tigervnc-standalone-server xfce4 dbus-x11 google-chrome-stable
 3. VNC で接続して Teams にログイン:
 
 ```bash
-ssh -L 5901:localhost:5901 <host>   # リモートの場合
-vncviewer localhost:5901
+ssh -L 5902:localhost:5902 <host>   # リモートの場合
+vncviewer localhost:5902
 ```
+
+Teams は専用 Chrome プロファイル `/tmp/chrome-teams3`、CDP ポート `9224` を使う。
 
 4. ログイン完了後、CLI で操作:
 
@@ -139,6 +144,7 @@ python3 ~/teams-cli.py chats
 | `~/.config/himalaya/config.toml` | himalaya の IMAP/SMTP 設定 |
 | `~/.local/share/gcalcli/oauth` | gcalcli の OAuth トークン |
 | `/tmp/chrome-keep` | Google Keep 用 Chrome プロファイル |
+| `/tmp/chrome-teams3` | Teams 用 Chrome プロファイル |
 
 テンプレート: [agents/config.example.json](agents/config.example.json)
 

@@ -3,15 +3,17 @@
 
 import asyncio
 import json
-import random
+import os
 import sys
-import urllib.parse
-import urllib.request
 
-import websockets
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+from chrome_cdp import ChromeCDP
 
 
-CDP_URL = "http://localhost:9222"
+CDP_URL = os.environ.get("KEEP_CDP_URL", "http://localhost:9223")
 KEEP_URL = "https://keep.google.com/"
 
 
@@ -19,87 +21,30 @@ def _js_string(value):
     return json.dumps(value, ensure_ascii=False)
 
 
-async def get_keep_page_ws():
-    """Find the Keep page WebSocket URL."""
-    resp = urllib.request.urlopen(f"{CDP_URL}/json/list")
-    pages = json.loads(resp.read())
-    for page in pages:
-        if page.get("type") != "page":
-            continue
-        url = page.get("url", "")
-        if "keep.google.com" in url:
-            return page["webSocketDebuggerUrl"]
-    raise RuntimeError(
-        "Google Keep page not found in Chrome. Run ~/keep-start.sh and log in first."
-    )
-
-
-class KeepCDP:
+class KeepCDP(ChromeCDP):
     def __init__(self):
-        self.ws = None
-        self.pending = {}
-        self.reader_task = None
-
-    async def connect(self):
-        ws_url = await get_keep_page_ws()
-        self.ws = await websockets.connect(ws_url, max_size=50 * 1024 * 1024)
-        self.reader_task = asyncio.create_task(self._reader())
-
-    async def _reader(self):
-        try:
-            async for raw in self.ws:
-                msg = json.loads(raw)
-                mid = msg.get("id")
-                if mid and mid in self.pending:
-                    self.pending[mid].set_result(msg)
-        except Exception:
-            pass
-
-    async def evaluate(self, expression, timeout=20):
-        mid = random.randint(10000, 99999)
-        req = {
-            "id": mid,
-            "method": "Runtime.evaluate",
-            "params": {
-                "expression": expression,
-                "awaitPromise": True,
-                "returnByValue": True,
-            },
-        }
-        fut = asyncio.get_event_loop().create_future()
-        self.pending[mid] = fut
-        await self.ws.send(json.dumps(req))
-        resp = await asyncio.wait_for(fut, timeout=timeout)
-        self.pending.pop(mid, None)
-        if "exceptionDetails" in resp.get("result", {}):
-            raise RuntimeError(json.dumps(resp["result"]["exceptionDetails"], ensure_ascii=False))
-        return resp.get("result", {}).get("result", {}).get("value")
-
-    async def close(self):
-        if self.reader_task:
-            self.reader_task.cancel()
-        if self.ws:
-            await self.ws.close()
+        super().__init__(
+            CDP_URL,
+            lambda page: "keep.google.com" in page.get("url", ""),
+        )
 
 
 async def ensure_keep_ready(cdp):
     """Ensure Keep is open and loaded."""
     status = await cdp.evaluate(
-        """
-        (async () => {
-            if (!location.href.startsWith('https://keep.google.com')) {
-                location.href = 'https://keep.google.com/';
+        f"""
+        (() => {{
+            if (!location.href.startsWith({json.dumps(KEEP_URL)})) {{
+                location.href = {json.dumps(KEEP_URL)};
                 return 'navigating';
-            }
-            if (document.body.innerText.includes('Google Keep')) {
-                return 'ready';
-            }
-            return 'loading';
-        })()
+            }}
+            return 'ok';
+        }})()
         """
     )
     if status == "navigating":
         await asyncio.sleep(5)
+
     for _ in range(20):
         ready = await cdp.evaluate(
             """
@@ -109,10 +54,6 @@ async def ensure_keep_ready(cdp):
                 if (
                     body.includes('Take a note') ||
                     body.includes('メモを入力') ||
-                    body.includes('検索') ||
-                    body.includes('Search') ||
-                    body.includes('Keep') ||
-                    document.querySelector('[role="textbox"]') ||
                     document.querySelector('input[aria-label*="検索"], input[aria-label*="Search"]')
                 ) return 'ready';
                 return 'loading';
@@ -127,21 +68,91 @@ async def ensure_keep_ready(cdp):
     raise RuntimeError("Google Keep did not finish loading.")
 
 
+async def _close_open_note(cdp):
+    button = await cdp.evaluate(
+        """
+        (() => {
+            const isVisible = el => {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight;
+            };
+            const el = [...document.querySelectorAll('button, div[role="button"]')].find(
+                node => isVisible(node) && /閉じる|Close/.test(((node.getAttribute('aria-label') || '') + ' ' + (node.innerText || '')).trim())
+            );
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        })()
+        """
+    )
+    if button:
+        await cdp.click_at(button["x"], button["y"])
+        await asyncio.sleep(0.8)
+
+
+async def _goto_notes_tab(cdp):
+    target = await cdp.evaluate(
+        """
+        (() => {
+            const isVisible = el => {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight;
+            };
+            const tab = [...document.querySelectorAll('[role="tab"]')].find(
+                el => isVisible(el) && ((el.getAttribute('aria-label') || '') === 'メモ' || (el.innerText || '').trim() === 'メモ')
+            );
+            if (!tab) return null;
+            const r = tab.getBoundingClientRect();
+            return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        })()
+        """
+    )
+    if target:
+        await cdp.click_at(target["x"], target["y"])
+        await asyncio.sleep(0.5)
+
+
+async def reset_view(cdp):
+    await _goto_notes_tab(cdp)
+    await _close_open_note(cdp)
+    await cdp.evaluate(
+        """
+        (() => {
+            window.scrollTo(0, 0);
+            const input = document.querySelector('input[aria-label*="検索"], input[aria-label*="Search"]');
+            if (!input) return 'no_search';
+            input.focus();
+            input.value = '';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            return 'ok';
+        })()
+        """
+    )
+    await asyncio.sleep(0.5)
+
+
 async def list_notes(cdp, limit=20):
+    await reset_view(cdp)
     result = await cdp.evaluate(
         f"""
         (() => {{
-            const textboxes = [...document.querySelectorAll('[role="textbox"]')];
+            const isVisible = el => {{
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.bottom > 80 && r.top < window.innerHeight;
+            }};
+            const seen = new Set();
             const notes = [];
-            for (const box of textboxes) {{
-                const title = (box.innerText || '').trim();
-                if (!title) continue;
-                const root = box.closest('[jscontroller], [style*="transform"], [tabindex]') || box.parentElement;
-                const text = root ? (root.innerText || '').trim() : title;
+            const titles = [...document.querySelectorAll('[role="textbox"][contenteditable="false"]')];
+            for (const titleEl of titles) {{
+                if (!isVisible(titleEl)) continue;
+                const title = (titleEl.innerText || '').trim();
+                if (!title || seen.has(title)) continue;
+                const root = titleEl.closest('[jscontroller], [tabindex]') || titleEl.closest('.IZ65Hb-s2gQvd') || titleEl.parentElement;
+                if (!root || !isVisible(root)) continue;
+                const text = (root.innerText || '').trim();
                 const lines = text.split(/\\n+/).map(s => s.trim()).filter(Boolean);
-                if (!lines.length) continue;
-                const preview = lines.slice(1, 5).join(' | ');
-                notes.push({{ title, preview }});
+                notes.push({{ title, preview: lines.slice(1, 5).join(' | ') }});
+                seen.add(title);
                 if (notes.length >= {limit}) break;
             }}
             return notes;
@@ -156,39 +167,23 @@ async def list_notes(cdp, limit=20):
 
 async def search_notes(cdp, query):
     safe_query = _js_string(query)
-    await cdp.evaluate(
+    await _close_open_note(cdp)
+    result = await cdp.evaluate(
         f"""
-        (async () => {{
-            const query = {safe_query};
+        (() => {{
             const input = document.querySelector('input[aria-label*="Search"], input[aria-label*="検索"]');
             if (!input) return 'search_input_not_found';
             input.focus();
-            input.value = query;
+            input.value = {safe_query};
             input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            input.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }}));
-            input.dispatchEvent(new KeyboardEvent('keyup', {{ key: 'Enter', bubbles: true }}));
             return 'ok';
         }})()
         """
     )
-    await asyncio.sleep(2)
+    if result != "ok":
+        raise RuntimeError(f"Search failed: {result}")
+    await asyncio.sleep(1.5)
     await list_notes(cdp, limit=20)
-
-
-async def reset_view(cdp):
-    await cdp.evaluate(
-        """
-        (() => {
-            const search = document.querySelector('input[aria-label*="検索"], input[aria-label*="Search"]');
-            if (search) {
-                search.focus();
-                search.value = '';
-                search.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-            return 'ok';
-        })()
-        """
-    )
 
 
 async def open_note(cdp, target):
@@ -198,80 +193,110 @@ async def open_note(cdp, target):
         f"""
         (async () => {{
             const target = {safe_target};
-            const activeTitle = [...document.querySelectorAll('[role="textbox"][contenteditable="true"]')]
-                .find(e => getComputedStyle(e).display !== 'none' && (e.innerText || '').trim());
-            if (activeTitle && (activeTitle.innerText || '').trim() === target) {{
-                return target;
-            }}
-            const closeBtn = [...document.querySelectorAll('div[role="button"],button')].find(
-                e => /閉じる|Close/.test((e.getAttribute('aria-label') || '') + ' ' + (e.innerText || ''))
-            );
-            if (closeBtn) {{
-                closeBtn.click();
-                await new Promise(r => setTimeout(r, 500));
+            const sleep = ms => new Promise(r => setTimeout(r, ms));
+            const isVisible = el => {{
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.bottom > 80 && r.top < window.innerHeight;
+            }};
+            const findCard = () => {{
+                const exact = [];
+                const partial = [];
+                for (const titleEl of document.querySelectorAll('[role="textbox"][contenteditable="false"]')) {{
+                    const title = (titleEl.innerText || '').trim();
+                    if (!title || !isVisible(titleEl)) continue;
+                    const root = titleEl.closest('[tabindex="0"]') || titleEl.closest('[jscontroller], [tabindex]') || titleEl.closest('.IZ65Hb-n0tgWb') || titleEl.parentElement;
+                    if (!root || !isVisible(root)) continue;
+                    const text = (root.innerText || '').trim();
+                    const item = {{ title, text }};
+                    if (title === target) exact.push(item);
+                    else if (title.includes(target) || text.includes(target)) partial.push(item);
+                }}
+                return exact[0] || partial.sort((a, b) => a.text.length - b.text.length)[0] || null;
+            }};
+
+            const search = document.querySelector('input[aria-label*="Search"], input[aria-label*="検索"]');
+            if (search) {{
+                search.focus();
+                search.value = target;
+                search.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                await sleep(1200);
             }}
 
-            const cards = [...document.querySelectorAll('[role="textbox"][contenteditable="false"]')];
-            let best = null;
-            let bestText = '';
-            for (const card of cards) {{
-                const title = (card.innerText || '').trim();
-                if (!title) continue;
-                const root = card.closest('[jscontroller], [style*="transform"], [tabindex]') || card.parentElement;
-                const text = ((root && root.innerText) || card.innerText || '').trim();
-                if (!text) continue;
-                if (title === target) {{
-                    best = root || card;
-                    bestText = text;
-                    break;
+            window.scrollTo(0, 0);
+            await sleep(300);
+            for (let i = 0; i < 40; i++) {{
+                const hit = findCard();
+                if (hit) {{
+                    for (const titleEl of document.querySelectorAll('[role="textbox"][contenteditable="false"]')) {{
+                        const title = (titleEl.innerText || '').trim();
+                        if (!title) continue;
+                        const root = titleEl.closest('[tabindex="0"]') || titleEl.closest('[jscontroller], [tabindex]') || titleEl.closest('.IZ65Hb-n0tgWb') || titleEl.parentElement;
+                        if (!root || !isVisible(root)) continue;
+                        const text = (root.innerText || '').trim();
+                        if (title !== hit.title && text !== hit.text) continue;
+                        root.focus();
+                        root.click();
+                        await sleep(900);
+                        return [...document.querySelectorAll('[contenteditable="true"][role="textbox"], [contenteditable="true"][role="combobox"]')].some(isVisible)
+                            ? 'opened'
+                            : 'clicked';
+                    }}
                 }}
-                if (!best && text.includes(target) && (!bestText || text.length < bestText.length)) {{
-                    best = root || card;
-                    bestText = text;
-                }}
+                window.scrollBy(0, Math.max(400, window.innerHeight - 200));
+                await sleep(400);
             }}
-            if (!best) return 'not_found';
-            best.click();
-            await new Promise(r => setTimeout(r, 800));
-            return bestText;
+            return null;
         }})()
         """
     )
-    if result == "not_found":
+    if not result:
         raise RuntimeError(f"Note not found: {target}")
-    await asyncio.sleep(1)
+    if result not in ("opened", "clicked"):
+        raise RuntimeError(f"Failed to open note: {result}")
+    await asyncio.sleep(0.5)
 
 
 async def read_current_note(cdp):
     result = await cdp.evaluate(
-        """
+        r"""
         (() => {
-            const activeTitle = [...document.querySelectorAll('[role="textbox"][contenteditable="true"]')]
-                .find(e => getComputedStyle(e).display !== 'none' && (e.innerText || '').trim());
-            if (!activeTitle) return null;
+            const isVisible = el => {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight;
+            };
+            const titleEditor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"]')]
+                .find(isVisible);
+            const bodyEditor = [...document.querySelectorAll('[contenteditable="true"][role="combobox"]')]
+                .find(isVisible);
+            if (!titleEditor && !bodyEditor) return null;
 
-            const root = activeTitle.closest('.IZ65Hb-s2gQvd') ||
-                activeTitle.closest('[jscontroller]') ||
-                activeTitle.parentElement;
-            const title = (activeTitle.innerText || '').trim();
+            const titleText = (titleEditor ? titleEditor.innerText : '').trim();
+            const title = titleText.split(/\n+/)[0].trim();
 
-            const listItems = [...root.querySelectorAll('[contenteditable="true"][aria-label="リストアイテム"]')].map(item => {
-                const row = item.closest('.MPu53c-bN97Pc-sM5MNb') || item.parentElement;
-                const checkbox = row ? row.querySelector('[role="checkbox"]') : null;
+            const root = (bodyEditor || titleEditor).closest('.IZ65Hb-s2gQvd') ||
+                (bodyEditor || titleEditor).closest('[jscontroller]') ||
+                (bodyEditor || titleEditor).parentElement;
+
+            const listItems = [...root.querySelectorAll('[role="checkbox"]')].map(box => {
+                const row = box.closest('.bVEB4e-rymPhb-ibnC6b') ||
+                    box.closest('.MPu53c-bN97Pc-sM5MNb') ||
+                    box.parentElement;
+                const textNode = row ? row.querySelector('.vIzZGf-fmcmS, .rymPhb-ibnC6b-bVEB4e-fmcmS-haAclf') : null;
                 return {
-                    text: (item.innerText || '').trim(),
-                    checked: checkbox ? checkbox.getAttribute('aria-checked') === 'true' : false,
+                    text: textNode ? (textNode.innerText || '').trim() : '',
+                    checked: box.getAttribute('aria-checked') === 'true',
                 };
             }).filter(item => item.text);
 
-            const body = listItems.length
-                ? listItems.map(item => (item.checked ? '[x] ' : '[ ] ') + item.text).join('\\n')
-                : (root.innerText || '')
-                    .split(/\\n+/)
-                    .map(s => s.trim())
-                    .filter(Boolean)
-                    .filter(s => s !== title && s !== '固定済み' && s !== 'その他' && s !== '閉じる')
-                    .join('\\n');
+            let body = '';
+            if (listItems.length) {
+                body = listItems.map(item => (item.checked ? '[x] ' : '[ ] ') + item.text).join('\\n');
+            } else if (bodyEditor) {
+                body = (bodyEditor.innerText || '').trim();
+            } else if (titleText) {
+                const lines = titleText.split(/\\n+/).map(s => s.trim()).filter(Boolean);
+                body = lines.slice(1).join('\\n');
+            }
 
             return { title, body };
         })()
@@ -286,59 +311,130 @@ async def read_current_note(cdp):
 
 
 async def create_note(cdp, title, body):
-    note_text = title if not body else f"{title}\n\n{body}"
-    safe_text = _js_string(note_text)
-    result = await cdp.evaluate(
-        f"""
-        (async () => {{
-            if (!location.href.startsWith('https://keep.google.com')) {{
-                location.href = 'https://keep.google.com/';
-                await new Promise(r => setTimeout(r, 3000));
-            }}
-
-            const closeBtn = [...document.querySelectorAll('div[role="button"],button')].find(
-                e => /閉じる|Close/.test((e.getAttribute('aria-label') || '') + ' ' + (e.innerText || ''))
+    await ensure_keep_ready(cdp)
+    await reset_view(cdp)
+    composer = await cdp.evaluate(
+        """
+        (() => {
+            const isVisible = el => {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight;
+            };
+            window.scrollTo(0, 0);
+            const blankTitle = [...document.querySelectorAll('[contenteditable="true"][role="textbox"]')].find(
+                el => isVisible(el) && !(el.innerText || '').trim()
             );
-            if (closeBtn) {{
-                closeBtn.click();
-                await new Promise(r => setTimeout(r, 500));
-            }}
-
-            const search = document.querySelector('input[aria-label*="検索"], input[aria-label*="Search"]');
-            if (search) {{
-                search.value = '';
-                search.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                await new Promise(r => setTimeout(r, 300));
-            }}
-            const takeNote = [...document.querySelectorAll('div, button')].find(
-                el => /Take a note|メモを入力/.test((el.getAttribute('aria-label') || '') + ' ' + (el.innerText || ''))
+            const blankBody = [...document.querySelectorAll('[contenteditable="true"][role="combobox"]')].find(
+                el => isVisible(el) && !((el.innerText || '').trim())
             );
-            if (!takeNote) return 'take_note_not_found';
-            takeNote.click();
-            await new Promise(r => setTimeout(r, 500));
+            if (blankTitle && blankBody) return { status: 'ready' };
 
-            const visibleEditors = [...document.querySelectorAll('[contenteditable="true"]')]
-                .filter(el => getComputedStyle(el).display !== 'none');
-            const bodyBox = visibleEditors[0];
-            const closeButton = [...document.querySelectorAll('button, div[role="button"]')].find(
-                el => /Close|閉じる/.test((el.getAttribute('aria-label') || '') + ' ' + (el.innerText || ''))
+            const placeholder = [...document.querySelectorAll('.h1U9Be-xhiy4.qAWA2, .IZ65Hb-s2gQvd, .IZ65Hb-TBnied')].find(
+                el => isVisible(el) && (el.innerText || '').trim() === 'メモを入力…'
             );
-
-            if (!bodyBox || !closeButton) return 'editor_not_found';
-
-            bodyBox.focus();
-            bodyBox.innerText = {safe_text};
-            bodyBox.dispatchEvent(new InputEvent('input', {{ bubbles: true, data: {safe_text} }}));
-
-            await new Promise(r => setTimeout(r, 800));
-            closeButton.click();
-            return 'created';
-        }})()
+            if (!placeholder) return { status: 'composer_not_found' };
+            const r = placeholder.getBoundingClientRect();
+            return { status: 'click', x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        })()
         """
     )
-    if result != "created":
-        raise RuntimeError(f"Failed to create note: {result}")
+    if composer and composer.get("status") == "click":
+        await cdp.click_at(composer["x"], composer["y"])
+        await asyncio.sleep(0.8)
+    elif not composer or composer.get("status") != "ready":
+        status = composer.get("status") if isinstance(composer, dict) else composer
+        raise RuntimeError(f"Failed to find Keep composer: {status}")
+
+    result = await cdp.evaluate(
+        """
+        (() => {
+            const isVisible = el => {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight;
+            };
+            const titleEditor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"]')].find(
+                el => isVisible(el) && (el.getAttribute('aria-label') || '') === 'タイトル'
+            ) || [...document.querySelectorAll('[contenteditable="true"][role="textbox"]')].find(
+                el => isVisible(el) && !(el.innerText || '').trim()
+            );
+            const bodyEditor = [...document.querySelectorAll('[contenteditable="true"][role="combobox"]')].find(
+                el => isVisible(el)
+            );
+            if (!titleEditor || !bodyEditor) return 'editor_not_found';
+            titleEditor.focus();
+            return 'ok';
+        })()
+        """
+    )
+    if result != "ok":
+        raise RuntimeError(f"Failed to open note editor: {result}")
+
+    await cdp.insert_text(title)
+    await asyncio.sleep(0.2)
+
+    body_target = await cdp.evaluate(
+        """
+        (() => {
+            const isVisible = el => {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight;
+            };
+            const titleEditor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"]')].find(isVisible);
+            const root = titleEditor
+                ? titleEditor.closest('.IZ65Hb-s2gQvd') || titleEditor.parentElement
+                : null;
+            const bodyEditor = root
+                ? [...root.querySelectorAll('[role="combobox"]')].find(isVisible)
+                : null;
+            if (!bodyEditor) return null;
+            const r = bodyEditor.getBoundingClientRect();
+            return { x: r.x + Math.min(40, r.width / 2), y: r.y + Math.min(20, r.height / 2) };
+        })()
+        """
+    )
+    if not body_target:
+        raise RuntimeError("Failed to focus note body: body_not_found")
+    await cdp.click_at(body_target["x"], body_target["y"])
+    await asyncio.sleep(0.1)
+    if body:
+        await cdp.insert_text(body)
+        await asyncio.sleep(0.2)
+
+    await _close_open_note(cdp)
+    await asyncio.sleep(0.8)
     print(f"Created: {title}")
+
+
+async def archive_note(cdp, target):
+    await open_note(cdp, target)
+    result = await cdp.evaluate(
+        """
+        (() => {
+            const isVisible = el => {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight;
+            };
+            const editor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"], [contenteditable="true"][role="combobox"]')]
+                .filter(isVisible)
+                .sort((a, b) => (b.getBoundingClientRect().width * b.getBoundingClientRect().height) - (a.getBoundingClientRect().width * a.getBoundingClientRect().height))[0];
+            if (!editor) return null;
+            const er = editor.getBoundingClientRect();
+            const button = [...document.querySelectorAll('button, div[role="button"]')].find(el => {
+                if (!isVisible(el) || (el.getAttribute('aria-label') || '') !== 'アーカイブ') return false;
+                const r = el.getBoundingClientRect();
+                return r.x >= er.x - 20 && r.x <= er.right + 20 && r.y >= er.y - 20 && r.y <= er.bottom + 80;
+            });
+            if (!button) return null;
+            const r = button.getBoundingClientRect();
+            return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        })()
+        """
+    )
+    if not result:
+        raise RuntimeError(f"Note not found for archive: {target}")
+    await cdp.click_at(result["x"], result["y"])
+    await asyncio.sleep(0.8)
+    print(f"Archived: {target}")
 
 
 async def dump_page(cdp):
@@ -353,9 +449,10 @@ async def main():
         print("Commands:")
         print("  list [--limit N]            List visible notes")
         print("  search <query>              Search notes")
-        print("  open <query>                Open a note by partial match")
+        print("  open <query>                Open a note by exact/partial match")
         print("  read                        Read currently open note")
         print("  create <title> [body]       Create a text note")
+        print("  archive <title>             Archive a note by exact title")
         print("  dump                        Dump page text (debug)")
         print()
         print("Start Chrome first: ~/keep-start.sh")
@@ -382,6 +479,8 @@ async def main():
             title = sys.argv[2]
             body = sys.argv[3] if len(sys.argv) >= 4 else ""
             await create_note(cdp, title, body)
+        elif cmd == "archive" and len(sys.argv) >= 3:
+            await archive_note(cdp, " ".join(sys.argv[2:]))
         elif cmd == "dump":
             await dump_page(cdp)
         else:

@@ -30,10 +30,17 @@ Google Calendar の読み書きを gcalcli で行う。
 
 ### Google Keep
 
-Google Keep のノート読み書きを keep-cli.py (gkeepapi ラッパー) で行う。
+Google Keep のノート読み書きを keep-cli.py (Chrome CDP 経由) で行う。
 
 - ツール: `~/keep-cli.py`
 - 詳細: [agents/keep-access.md](agents/keep-access.md)
+
+### Generic Chrome Site
+
+任意サイトの探索・暫定操作を Chrome CDP 経由で行う汎用 CLI。
+
+- ツール: `~/chrome-site-cli.py`, `~/chrome-app-start.sh`
+- 詳細: [agents/chrome-site-access.md](agents/chrome-site-access.md)
 
 ### OneNote
 

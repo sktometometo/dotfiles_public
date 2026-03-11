@@ -1,6 +1,7 @@
 # Google Keep アクセスガイド
 
 Google Keep へのアクセスは `keep-cli.py` (Chrome CDP 経由) で行う。
+Keep 用の Chrome は専用プロファイル・専用 CDP ポートで起動するため、他の CLI と競合しない。
 
 `gkeepapi` / `gpsoauth` ベースの認証は不安定なため、ブラウザ自動化方式に切り替えている。
 
@@ -22,7 +23,14 @@ pip3 install --user --break-system-packages websockets
 #    SSH トンネル: ssh -L 5901:localhost:5901 <host>
 ```
 
-Chrome プロファイルは `/tmp/chrome-keep` に保存される。
+Keep の Chrome プロファイルは `/tmp/chrome-keep`、CDP ポートは `9223`。
+
+必要なら環境変数で上書きできる。
+
+```bash
+KEEP_CDP_PORT=9323 KEEP_VNC_DISPLAY=:5 KEEP_VNC_PORT=5905 ~/keep-start.sh
+KEEP_CDP_URL=http://localhost:9323 python3 ~/keep-cli.py list
+```
 
 ## CLI ツール
 
