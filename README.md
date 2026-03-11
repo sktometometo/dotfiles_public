@@ -154,6 +154,7 @@ python3 ~/teams-cli.py chats
 |------------|-------------|
 | Claude Code | `~/.claude/CLAUDE.md`（`@` で `agents/*.md` を参照） |
 | Codex | `AGENTS.md`（リポジトリルート）+ `~/.codex/instructions.md` |
+| Gemini CLI | `GEMINI.md`（リポジトリルート） |
 
 ## dotfiles
 
