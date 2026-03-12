@@ -18,6 +18,9 @@
     "email": "your_email@gmail.com",
     "master_token": "YOUR_MASTER_TOKEN"
   },
+  "moneyforward": {
+    "openai_model": "gpt-4.1-mini"
+  },
   "gdocs": {
     "client_id": "YOUR_CLIENT_ID",
     "client_secret": "YOUR_CLIENT_SECRET"

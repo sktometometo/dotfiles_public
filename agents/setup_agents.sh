@@ -11,8 +11,17 @@ echo "Setting up agent tools from $AGENTS_DIR"
 # ── Symlinks ──
 echo ""
 echo "=== Symlinks ==="
-for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py keep-start.sh gdocs-cli.py chrome-app-start.sh chrome-site-cli.py; do
+for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py keep-start.sh gdocs-cli.py moneyforward-cli.py moneyforward-start.sh chrome-app-start.sh chrome-site-cli.py; do
     src="$AGENTS_DIR/$f"
+    dst="$HOME/$f"
+    if [ -f "$src" ]; then
+        ln -sf "$src" "$dst"
+        echo "  $dst -> $src"
+    fi
+done
+
+for f in GEMINI.md; do
+    src="$AGENTS_DIR/../$f"
     dst="$HOME/$f"
     if [ -f "$src" ]; then
         ln -sf "$src" "$dst"
