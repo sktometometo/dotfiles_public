@@ -29,6 +29,22 @@ for f in GEMINI.md; do
     fi
 done
 
+CODEX_DIR="$HOME/.codex"
+mkdir -p "$CODEX_DIR"
+CODEX_INSTRUCTIONS_SRC="$AGENTS_DIR/../codex/instructions.md"
+CODEX_INSTRUCTIONS_DST="$CODEX_DIR/instructions.md"
+if [ -f "$CODEX_INSTRUCTIONS_SRC" ]; then
+    ln -sf "$CODEX_INSTRUCTIONS_SRC" "$CODEX_INSTRUCTIONS_DST"
+    echo "  $CODEX_INSTRUCTIONS_DST -> $CODEX_INSTRUCTIONS_SRC"
+fi
+
+CODEX_LOCAL_EXAMPLE_SRC="$AGENTS_DIR/../codex/instructions.local.example.md"
+CODEX_LOCAL_DST="$CODEX_DIR/instructions.local.md"
+if [ -f "$CODEX_LOCAL_EXAMPLE_SRC" ] && [ ! -f "$CODEX_LOCAL_DST" ]; then
+    cp "$CODEX_LOCAL_EXAMPLE_SRC" "$CODEX_LOCAL_DST"
+    echo "  Created $CODEX_LOCAL_DST from template"
+fi
+
 # ── Config ──
 CONFIG_DIR="$HOME/.config/agent-tools"
 CONFIG_FILE="$CONFIG_DIR/config.json"

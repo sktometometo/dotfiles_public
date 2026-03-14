@@ -184,7 +184,7 @@ python3 ~/teams-cli.py chats
 | エージェント | 設定ファイル |
 |------------|-------------|
 | Claude Code | `~/.claude/CLAUDE.md`（`@` で `agents/*.md` を参照） |
-| Codex | `AGENTS.md`（リポジトリルート）+ `~/.codex/instructions.md` |
+| Codex | `AGENTS.md`（リポジトリルート）+ `~/.codex/instructions.md` + `~/.codex/instructions.local.md` |
 | Gemini CLI | `~/GEMINI.md`（`setup_agents.sh` がリポジトリルートの `GEMINI.md` へ symlink 作成） |
 
 ## dotfiles
