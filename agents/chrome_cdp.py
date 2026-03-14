@@ -85,6 +85,37 @@ class ChromeCDP:
     async def insert_text(self, text):
         await self.cdp_call("Input.insertText", {"text": text})
 
+    async def press_key(self, key, code=None, windows_virtual_key_code=None, modifiers=0):
+        key_code = windows_virtual_key_code if windows_virtual_key_code is not None else ord(key[:1]) if key else 0
+        payload = {
+            "type": "keyDown",
+            "key": key,
+            "code": code or key,
+            "windowsVirtualKeyCode": key_code,
+            "nativeVirtualKeyCode": key_code,
+            "modifiers": modifiers,
+        }
+        await self.cdp_call("Input.dispatchKeyEvent", payload)
+        payload["type"] = "keyUp"
+        await self.cdp_call("Input.dispatchKeyEvent", payload)
+
+    async def press_enter(self):
+        await self.press_key("Enter", code="Enter", windows_virtual_key_code=13)
+
+    async def shortcut(self, key, shift=False, alt=False):
+        modifiers = 2
+        if alt:
+            modifiers |= 1
+        if shift:
+            modifiers |= 8
+        key_upper = key.upper()
+        await self.press_key(
+            key_upper,
+            code=f"Key{key_upper}" if len(key_upper) == 1 and key_upper.isalpha() else key_upper,
+            windows_virtual_key_code=ord(key_upper[:1]) if key_upper else 0,
+            modifiers=modifiers,
+        )
+
     async def click_at(self, x, y):
         for event_type in ("mouseMoved", "mousePressed", "mouseReleased"):
             params = {"type": event_type, "x": x, "y": y, "button": "left"}

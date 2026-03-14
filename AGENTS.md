@@ -49,6 +49,14 @@ OneNote のノートブック・セクション・ページを読み書きする
 - ツール: `~/onenote-cli.py`
 - 詳細: [agents/onenote-access.md](agents/onenote-access.md)
 
+### Notion
+
+Notion を Chrome CDP 経由で読み書きする CLI ツール。guest 権限環境での利用を想定。
+
+- ツール: `~/notion-browser-cli.py`
+- 起動: `~/notion-start.sh`
+- 詳細: [agents/notion-access.md](agents/notion-access.md)
+
 ### Teams
 
 Microsoft Teams のチャット・チャネルを読み取る CLI ツール（Chrome CDP 経由）。

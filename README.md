@@ -20,6 +20,7 @@ cd ~/dotfiles_public
 | gcalcli | Google Calendar | `gcalcli` | [gcal-access.md](agents/gcal-access.md) |
 | keep-cli.py | Google Keep | `~/keep-cli.py` | [keep-access.md](agents/keep-access.md) |
 | chrome-site-cli.py | Generic Chrome Site | `~/chrome-site-cli.py` | [chrome-site-access.md](agents/chrome-site-access.md) |
+| notion-browser-cli.py | Notion | `~/notion-browser-cli.py` | [notion-access.md](agents/notion-access.md) |
 | onenote-cli.py | OneNote | `~/onenote-cli.py` | [onenote-access.md](agents/onenote-access.md) |
 | teams-cli.py | Teams | `~/teams-cli.py` | [teams-access.md](agents/teams-access.md) |
 
@@ -105,6 +106,35 @@ python3 ~/keep-cli.py list
 ~/onenote-cli.py auth
 ```
 
+#### Notion (notion-browser-cli.py)
+
+guest 権限のまま使う想定では、公式 API ではなく Chrome CDP 経由で操作する。
+
+1. 前提パッケージをインストール:
+
+```bash
+sudo apt install google-chrome-stable
+pip3 install --user --break-system-packages websockets
+```
+
+2. Notion 用 Chrome を起動:
+
+```bash
+~/notion-start.sh
+```
+
+3. 該当 display 上の Chrome で Notion にログイン
+
+4. ログイン後、CLI で操作:
+
+```bash
+python3 ~/notion-browser-cli.py status
+python3 ~/notion-browser-cli.py pages --limit 20
+python3 ~/notion-browser-cli.py read
+```
+
+詳細: [notion-access.md](agents/notion-access.md)
+
 #### Teams (teams-cli.py)
 
 1. 前提パッケージをインストール:
@@ -145,6 +175,7 @@ python3 ~/teams-cli.py chats
 | `~/.local/share/gcalcli/oauth` | gcalcli の OAuth トークン |
 | `/tmp/chrome-keep` | Google Keep 用 Chrome プロファイル |
 | `/tmp/chrome-teams3` | Teams 用 Chrome プロファイル |
+| `~/.config/agent-tools/chrome-notion` | Notion 用 Chrome プロファイル |
 
 テンプレート: [agents/config.example.json](agents/config.example.json)
 

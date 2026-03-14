@@ -21,6 +21,10 @@
   "moneyforward": {
     "openai_model": "gpt-4.1-mini"
   },
+  "notion": {
+    "token_file": "~/.config/agent-tools/notion-token.txt",
+    "version": "2025-09-03"
+  },
   "gdocs": {
     "client_id": "YOUR_CLIENT_ID",
     "client_secret": "YOUR_CLIENT_SECRET"
