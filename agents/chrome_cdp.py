@@ -85,7 +85,7 @@ class ChromeCDP:
     async def insert_text(self, text):
         await self.cdp_call("Input.insertText", {"text": text})
 
-    async def press_key(self, key, code=None, windows_virtual_key_code=None, modifiers=0):
+    async def press_key(self, key, code=None, windows_virtual_key_code=None, modifiers=0, text=None):
         key_code = windows_virtual_key_code if windows_virtual_key_code is not None else ord(key[:1]) if key else 0
         payload = {
             "type": "keyDown",
@@ -95,7 +95,24 @@ class ChromeCDP:
             "nativeVirtualKeyCode": key_code,
             "modifiers": modifiers,
         }
+        if text is not None:
+            payload["text"] = text
+            payload["unmodifiedText"] = text
         await self.cdp_call("Input.dispatchKeyEvent", payload)
+        if text is not None:
+            await self.cdp_call(
+                "Input.dispatchKeyEvent",
+                {
+                    "type": "char",
+                    "text": text,
+                    "unmodifiedText": text,
+                    "key": key,
+                    "code": code or key,
+                    "windowsVirtualKeyCode": key_code,
+                    "nativeVirtualKeyCode": key_code,
+                    "modifiers": modifiers,
+                },
+            )
         payload["type"] = "keyUp"
         await self.cdp_call("Input.dispatchKeyEvent", payload)
 
@@ -115,6 +132,20 @@ class ChromeCDP:
             windows_virtual_key_code=ord(key_upper[:1]) if key_upper else 0,
             modifiers=modifiers,
         )
+
+    async def type_text_keys(self, text):
+        for ch in text:
+            if ch == " ":
+                await self.press_key(" ", code="Space", windows_virtual_key_code=32, text=" ")
+            elif ch == "/":
+                await self.press_key("/", code="Slash", windows_virtual_key_code=191, text="/")
+            elif ch.isalpha():
+                code = f"Key{ch.upper()}"
+                await self.press_key(ch, code=code, windows_virtual_key_code=ord(ch.upper()), text=ch)
+            elif ch.isdigit():
+                await self.press_key(ch, code=f"Digit{ch}", windows_virtual_key_code=ord(ch), text=ch)
+            else:
+                await self.insert_text(ch)
 
     async def click_at(self, x, y):
         for event_type in ("mouseMoved", "mousePressed", "mouseReleased"):

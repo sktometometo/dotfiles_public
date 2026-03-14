@@ -82,6 +82,13 @@ python3 ~/notion-browser-cli.py read
 python3 ~/notion-browser-cli.py append "CLI から追記"
 ```
 
+末尾に新しい heading を追記:
+
+```bash
+python3 ~/notion-browser-cli.py append-heading 1 "要件整理"
+python3 ~/notion-browser-cli.py append-heading 2 "未完タスク"
+```
+
 テキストを含む段落を削除:
 
 ```bash

@@ -32,7 +32,11 @@ Commands:
   read                                 Print current page body text
   new-page <title>                     Create a new page from sidebar
   append <text>                        Append text to current page
+  append-heading <level> <text>        Append a new heading block at page end
   delete-block <text>                  Delete the shortest matching text block
+  heading <level> <text>               Convert matching block to heading 1/2/3
+  insert-heading-before <level> <match> <heading>
+                                       Insert a heading block before the matching block
   eval <js>                            Evaluate JavaScript and print JSON/value
 
 Env:
@@ -296,6 +300,47 @@ async def _focus_block_by_text(cdp, text):
     return result["message"]
 
 
+async def _focus_block_start_by_text(cdp, text):
+    result = await cdp.evaluate(
+        f"""
+        (() => {{
+            const target = {_js_string(text)};
+            const isVisible = el => {{
+                if (!el) return false;
+                const r = el.getBoundingClientRect();
+                const s = getComputedStyle(el);
+                return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
+            }};
+            let best = null;
+            let bestText = '';
+            const blocks = [...document.querySelectorAll('[contenteditable="true"][role="textbox"][data-content-editable-leaf="true"]')]
+                .filter(isVisible);
+            for (const el of blocks) {{
+                const value = (el.innerText || '').trim();
+                if (!value || !value.includes(target)) continue;
+                if (!best || value.length < bestText.length) {{
+                    best = el;
+                    bestText = value;
+                }}
+            }}
+            if (!best) return {{ ok: false, message: 'not found' }};
+            best.focus();
+            best.click();
+            const range = document.createRange();
+            range.selectNodeContents(best);
+            range.collapse(true);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            return {{ ok: true, message: bestText }};
+        }})()
+        """
+    )
+    if not result.get("ok"):
+        raise RuntimeError(f"Could not find block containing: {text}")
+    return result["message"]
+
+
 async def cmd_read(cdp):
     result = await cdp.evaluate(
         """
@@ -355,12 +400,58 @@ async def cmd_append(cdp, text):
     print(f"Inserted {len(text)} chars")
 
 
+async def cmd_append_heading(cdp, level, text):
+    if level not in {"1", "2", "3"}:
+        raise RuntimeError("Heading level must be 1, 2, or 3.")
+    await _focus_page_editor(cdp)
+    await cdp.press_enter()
+    await asyncio.sleep(0.15)
+    prefix = "#" * int(level) + " "
+    await cdp.type_text_keys(prefix)
+    await asyncio.sleep(0.1)
+    await cdp.type_text_keys(text)
+    await asyncio.sleep(0.1)
+    await cdp.press_enter()
+    print(f"Inserted heading {level}: {text}")
+
+
 async def cmd_delete_block(cdp, text):
     matched = await _focus_block_by_text(cdp, text)
     await cdp.press_key("Backspace", code="Backspace", windows_virtual_key_code=8)
     await asyncio.sleep(0.1)
     await cdp.press_key("Backspace", code="Backspace", windows_virtual_key_code=8)
     print(f"Deleted block matching: {matched}")
+
+
+async def cmd_heading(cdp, level, text):
+    if level not in {"1", "2", "3"}:
+        raise RuntimeError("Heading level must be 1, 2, or 3.")
+    matched = await _focus_block_by_text(cdp, text)
+    cleaned = matched
+    if cleaned.startswith("# "):
+        cleaned = cleaned[2:]
+    elif cleaned.startswith("## "):
+        cleaned = cleaned[3:]
+    elif cleaned.startswith("### "):
+        cleaned = cleaned[4:]
+    await cdp.press_key("Backspace", code="Backspace", windows_virtual_key_code=8)
+    await asyncio.sleep(0.1)
+    await cdp.type_text_keys(f"/heading {level}")
+    await asyncio.sleep(0.4)
+    await cdp.press_enter()
+    await asyncio.sleep(0.3)
+    await cdp.insert_text(cleaned)
+    print(f"Converted to heading {level}: {cleaned}")
+
+
+async def cmd_insert_heading_before(cdp, level, match_text, heading_text):
+    await _focus_block_start_by_text(cdp, match_text)
+    await cdp.press_enter()
+    await asyncio.sleep(0.2)
+    await cdp.insert_text(heading_text)
+    await asyncio.sleep(0.2)
+    await cmd_heading(cdp, level, heading_text)
+    print(f"Inserted heading {level} before block matching: {match_text}")
 
 
 async def cmd_eval(cdp, expression):
@@ -395,8 +486,16 @@ async def main():
         await with_client(lambda cdp: cmd_new_page(cdp, " ".join(args)))
     elif cmd == "append" and args:
         await with_client(lambda cdp: cmd_append(cdp, " ".join(args)))
+    elif cmd == "append-heading" and len(args) >= 2:
+        await with_client(lambda cdp: cmd_append_heading(cdp, args[0], " ".join(args[1:])))
     elif cmd == "delete-block" and args:
         await with_client(lambda cdp: cmd_delete_block(cdp, " ".join(args)))
+    elif cmd == "heading" and len(args) >= 2:
+        await with_client(lambda cdp: cmd_heading(cdp, args[0], " ".join(args[1:])))
+    elif cmd == "insert-heading-before" and len(args) >= 3:
+        await with_client(
+            lambda cdp: cmd_insert_heading_before(cdp, args[0], args[1], " ".join(args[2:]))
+        )
     elif cmd == "eval" and args:
         await with_client(lambda cdp: cmd_eval(cdp, " ".join(args)))
     else:
