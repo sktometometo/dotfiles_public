@@ -11,7 +11,7 @@ echo "Setting up agent tools from $AGENTS_DIR"
 # ── Symlinks ──
 echo ""
 echo "=== Symlinks ==="
-for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py keep-start.sh gdocs-cli.py moneyforward-cli.py moneyforward-start.sh chrome-app-start.sh chrome-site-cli.py notion-cli.py notion-browser-cli.py notion-start.sh; do
+for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py keep-start.sh freee-start.sh freee-xpra-start.sh gdocs-cli.py moneyforward-cli.py moneyforward-start.sh chrome-app-start.sh chrome-site-cli.py notion-cli.py notion-browser-cli.py notion-start.sh; do
     src="$AGENTS_DIR/$f"
     dst="$HOME/$f"
     if [ -f "$src" ]; then
