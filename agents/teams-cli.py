@@ -13,7 +13,7 @@ if SCRIPT_DIR not in sys.path:
 from chrome_cdp import ChromeCDP
 
 
-CDP_URL = os.environ.get("TEAMS_CDP_URL", "http://localhost:9224")
+CDP_URL = os.environ.get("TEAMS_CDP_URL", "http://localhost:9222")
 CONFIG_FILE = os.path.expanduser("~/.config/agent-tools/config.json")
 
 
@@ -351,22 +351,179 @@ async def list_orgs():
         print(f"  {key:10s}  {name}")
 
 
+async def reload_page(cdp, wait=5):
+    """Reload the current page and wait for it to settle."""
+    await cdp.evaluate("location.reload()")
+    await asyncio.sleep(wait)
+    await ensure_teams_ready(cdp)
+
+
+async def open_thread_reply_panel(cdp, max_retries=3):
+    """Try to open the thread reply panel by clicking 'スレッドで返信'.
+
+    Returns True if the reply editor becomes available, False otherwise.
+    """
+    for attempt in range(max_retries):
+        # Check if reply editor is already open
+        editor_count = await cdp.evaluate("""
+            (() => {
+                const editors = document.querySelectorAll('[role="textbox"][contenteditable="true"]');
+                let count = 0;
+                for (const e of editors) {
+                    const rect = e.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) count++;
+                }
+                return String(count);
+            })()
+        """)
+        if int(editor_count or "0") > 0:
+            return True
+
+        # Click 'スレッドで返信' - pick the last visible one (closest to the target thread)
+        click_result = await cdp.evaluate("""
+            (() => {
+                const candidates = [];
+                const els = document.querySelectorAll('a, button, span, div');
+                for (const el of els) {
+                    if (el.children.length > 3) continue;
+                    const t = el.textContent.trim();
+                    if (t === 'スレッドで返信' || t === 'Reply in thread') {
+                        const rect = el.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            candidates.push({el, y: rect.y});
+                        }
+                    }
+                }
+                if (candidates.length === 0) return 'not_found';
+                // Click the last (bottom-most) one
+                const target = candidates[candidates.length - 1];
+                target.el.click();
+                return 'clicked';
+            })()
+        """)
+        if click_result == "not_found":
+            # Try reload and retry
+            await reload_page(cdp, wait=4)
+            continue
+
+        await asyncio.sleep(3)
+
+    return False
+
+
 async def goto_url(cdp, url, wait=8):
-    """Navigate to a Teams URL and read the content."""
+    """Navigate to a Teams URL and read the content.
+
+    If the URL contains parentMessageId (thread URL), automatically
+    opens the thread reply panel.
+    """
     safe_url = url.replace("'", "\\'")
     await cdp.evaluate(f"window.location.href = '{safe_url}'")
     await asyncio.sleep(wait)
+    # Reload to ensure thread reply UI is fully rendered
+    await reload_page(cdp, wait=5)
+
+    # If this is a thread URL, open the reply panel
+    is_thread = "parentMessageId" in url
+    if is_thread:
+        opened = await open_thread_reply_panel(cdp)
+        if opened:
+            print("Thread reply panel opened", file=sys.stderr)
+        else:
+            print("Warning: could not open thread reply panel", file=sys.stderr)
+
     await read_current_chat(cdp)
 
 
+async def reply_to_thread(cdp, body):
+    """Reply to the currently open thread.
+
+    Looks for the thread reply textbox specifically inside the thread panel.
+    Will NOT fall back to chat editors or channel compose editors.
+    Returns True if successful, False otherwise.
+    """
+    # Try to find and focus the thread reply editor
+    focus_result = await cdp.evaluate(
+        "(() => {"
+        "  const editors = document.querySelectorAll('[contenteditable=true]');"
+        "  for (const e of editors) {"
+        "    const label = e.getAttribute('aria-label') || '';"
+        "    if (/返信|reply/i.test(label)) {"
+        "      const rect = e.getBoundingClientRect();"
+        "      if (rect.width > 0 && rect.height > 0) {"
+        "        e.focus();"
+        "        return 'ok_reply';"
+        "      }"
+        "    }"
+        "  }"
+        "  return 'not_found';"
+        "})()"
+    )
+
+    if focus_result == "not_found":
+        return False
+
+    await asyncio.sleep(0.3)
+    await cdp.insert_text(body)
+    await asyncio.sleep(1)
+
+    # Verify content was inserted
+    editor_len = await cdp.evaluate("""
+        (() => {
+            const editors = document.querySelectorAll('[role="textbox"][contenteditable="true"]');
+            for (const e of editors) {
+                if (e.textContent.length > 0) return String(e.textContent.length);
+            }
+            return '0';
+        })()
+    """)
+    if editor_len == "0":
+        print("Error: body text was not inserted into thread reply editor", file=sys.stderr)
+        return False
+
+    # Click send button - find by aria-label containing 送信/send
+    btn_info = await cdp.evaluate(
+        "(() => {"
+        "  const buttons = document.querySelectorAll('button');"
+        "  for (const b of buttons) {"
+        "    const label = b.getAttribute('aria-label') || '';"
+        "    if (/送信|send/i.test(label)) {"
+        "      const rect = b.getBoundingClientRect();"
+        "      if (rect.width > 0 && rect.height > 0) {"
+        "        return JSON.stringify({x: rect.x + rect.width/2, y: rect.y + rect.height/2});"
+        "      }"
+        "    }"
+        "  }"
+        "  return '';"
+        "})()"
+    )
+    if not btn_info:
+        print("Error: send/reply button not found in thread", file=sys.stderr)
+        return False
+
+    coords = json.loads(btn_info)
+    await cdp.click_at(coords["x"], coords["y"])
+    await asyncio.sleep(3)
+    print("Replied to thread successfully")
+    return True
+
+
 async def post_to_channel(cdp, body, subject=None):
-    """Post a message to the currently open channel.
+    """Post a message to the currently open channel or reply to thread.
+
+    If a thread is open, replies to the thread instead.
 
     Args:
         cdp: TeamsCDP instance.
         body: Message body text.
         subject: Optional subject line (creates a titled post).
     """
+    # First, try to reply to an open thread (if we're in thread view)
+    if not subject:
+        thread_ok = await reply_to_thread(cdp, body)
+        if thread_ok:
+            return True
+
     # Click "チャネルで投稿" to open compose area
     result = await cdp.evaluate("""
         (() => {
@@ -577,6 +734,7 @@ async def main():
         print("  post -s <subject> <body> Post with a subject line")
         print("  thread <query>           Open a thread by matching text and read replies")
         print("  goto <url>               Navigate to a Teams URL and read it")
+        print("  reload                   Reload the current page")
         print("  dump                     Dump full page text (debug)")
         print()
         print("The post command reads body from argument or stdin (if '-').")
@@ -629,6 +787,9 @@ async def main():
         elif cmd == "thread" and len(sys.argv) >= 3:
             query = " ".join(sys.argv[2:])
             await read_thread(cdp, query)
+        elif cmd == "reload":
+            await reload_page(cdp)
+            print("Page reloaded")
         elif cmd == "dump":
             await get_page_text(cdp)
         else:

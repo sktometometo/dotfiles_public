@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec "$SCRIPT_DIR/chrome-app-start.sh" \
   "Google Keep" \
   "https://keep.google.com" \
-  "${KEEP_CDP_PORT:-9223}" \
+  "${KEEP_CDP_PORT:-9221}" \
   "${KEEP_CHROME_DATA_DIR:-/tmp/chrome-keep}" \
   "${KEEP_CHROME_LOG:-/tmp/keep-chrome.log}" \
   "python3 ~/keep-cli.py list" \

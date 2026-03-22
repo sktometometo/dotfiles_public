@@ -16,7 +16,7 @@ from chrome_cdp import ChromeCDP
 
 
 CONFIG_FILE = os.path.expanduser("~/.config/agent-tools/config.json")
-CDP_URL = os.environ.get("MONEYFORWARD_CDP_URL", "http://localhost:9225")
+CDP_URL = os.environ.get("MONEYFORWARD_CDP_URL", "http://localhost:9224")
 MONEYFORWARD_URL = os.environ.get("MONEYFORWARD_URL", "https://moneyforward.com/")
 
 
@@ -52,7 +52,7 @@ Commands:
   eval <js>                            Evaluate JavaScript and print JSON/value
 
 Env:
-  MONEYFORWARD_CDP_URL         Chrome CDP URL (default: http://localhost:9225)
+  MONEYFORWARD_CDP_URL         Chrome CDP URL (default: http://localhost:9224)
   MONEYFORWARD_URL             Target URL (default: https://moneyforward.com/)
   MONEYFORWARD_OPENAI_MODEL    Model used by ask (default: gpt-4.1-mini)
   OPENAI_API_KEY               Required for ask
