@@ -22,8 +22,6 @@ sudo apt install google-chrome-stable
 pip3 install --user --break-system-packages websockets
 ```
 
-既存の X display が必要。現在の既定値は `:2`。
-
 ## 起動
 
 ```bash
@@ -32,21 +30,29 @@ pip3 install --user --break-system-packages websockets
 
 既定では以下を使う:
 
-- display: `:2`
-- CDP port: `9226`
+- VNC display: `:5`
+- VNC port: `5905`
+- CDP port: `9225`
 - Chrome profile: `~/.config/agent-tools/chrome-notion`
 
 環境変数で上書き可能:
 
 ```bash
-NOTION_DISPLAY=:2
-NOTION_CDP_PORT=9226
+NOTION_VNC_DISPLAY=:5
+NOTION_VNC_PORT=5905
+NOTION_CDP_PORT=9225
 NOTION_CHROME_DATA_DIR=~/.config/agent-tools/chrome-notion
 ```
 
 ## ログイン
 
-VNC などで該当 display 上の Chrome を開き、Notion に一度ログインする。  
+初回のみ VNC で Notion にログインする。
+
+```
+VNC 接続: localhost:5905
+SSH トンネル: ssh -L 5905:localhost:5905 <host>
+```
+
 ログイン後は Chrome プロファイルに状態が保持される。
 
 ## コマンド例

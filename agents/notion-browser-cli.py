@@ -13,7 +13,7 @@ if SCRIPT_DIR not in sys.path:
 from chrome_cdp import ChromeCDP
 
 
-CDP_URL = os.environ.get("NOTION_CDP_URL", "http://localhost:9226")
+CDP_URL = os.environ.get("NOTION_CDP_URL", "http://localhost:9225")
 NOTION_URL = os.environ.get("NOTION_URL", "https://www.notion.com/")
 
 
@@ -40,7 +40,7 @@ Commands:
   eval <js>                            Evaluate JavaScript and print JSON/value
 
 Env:
-  NOTION_CDP_URL   Chrome CDP URL (default: http://localhost:9226)
+  NOTION_CDP_URL   Chrome CDP URL (default: http://localhost:9225)
   NOTION_URL       Target URL (default: https://www.notion.so/)
 """
     )

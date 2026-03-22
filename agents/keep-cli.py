@@ -13,7 +13,7 @@ if SCRIPT_DIR not in sys.path:
 from chrome_cdp import ChromeCDP
 
 
-CDP_URL = os.environ.get("KEEP_CDP_URL", "http://localhost:9223")
+CDP_URL = os.environ.get("KEEP_CDP_URL", "http://localhost:9221")
 KEEP_URL = "https://keep.google.com/"
 
 

@@ -5,7 +5,7 @@
 ## 初回セットアップ
 
 1. `~/moneyforward-start.sh` を実行
-2. VNC で `localhost:5902` に接続
+2. VNC で `localhost:5904` に接続
 3. Chrome 上で Money Forward にログイン
 4. ログイン後、別ターミナルで `~/moneyforward-cli.py status` を実行
 

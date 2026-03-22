@@ -23,7 +23,7 @@ pip3 install --user --break-system-packages websockets
 #    SSH トンネル: ssh -L 5901:localhost:5901 <host>
 ```
 
-Keep の Chrome プロファイルは `/tmp/chrome-keep`、CDP ポートは `9223`。
+Keep の Chrome プロファイルは `/tmp/chrome-keep`、CDP ポートは `9221`。
 
 必要なら環境変数で上書きできる。
 
