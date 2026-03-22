@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start a dedicated VNC + Chrome session for an app-specific CLI.
+# Start or reuse a dedicated VNC + Chrome session for an app-specific CLI.
 
 set -euo pipefail
 
@@ -17,6 +17,39 @@ HINT_COMMAND="$6"
 VNC_DISPLAY="${7:-:1}"
 VNC_PORT="${8:-5901}"
 XSTARTUP_SCRIPT="$HOME/.vnc/xstartup-agent"
+CHROME_BIN="${CHROME_APP_CHROME_BIN:-google-chrome}"
+SESSION_STATE_DIR="${CHROME_APP_STATE_DIR:-$HOME/.cache/agent-tools/chrome-sessions}"
+APP_SLUG="$(printf '%s' "$APP_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '-')"
+STATE_FILE="${CHROME_APP_STATE_FILE:-$SESSION_STATE_DIR/$APP_SLUG.json}"
+CDP_URL="http://localhost:$CDP_PORT"
+
+mkdir -p "$SESSION_STATE_DIR"
+
+write_state() {
+  cat >"$STATE_FILE" <<EOF
+{
+  "app_name": "$APP_NAME",
+  "app_url": "$APP_URL",
+  "cdp_port": $CDP_PORT,
+  "cdp_url": "$CDP_URL",
+  "profile_dir": "$CHROME_DATA_DIR",
+  "log_file": "$LOG_FILE",
+  "hint_command": "$HINT_COMMAND",
+  "vnc_display": "$VNC_DISPLAY",
+  "vnc_port": $VNC_PORT
+}
+EOF
+}
+
+if curl -s "$CDP_URL/json/version" >/dev/null 2>&1; then
+  write_state
+  echo "Reusing existing Chrome for $APP_NAME"
+  echo "Chrome CDP ready at $CDP_URL"
+  echo "Session state saved to $STATE_FILE"
+  echo ""
+  echo "Use: $HINT_COMMAND"
+  exit 0
+fi
 
 mkdir -p "$HOME/.vnc"
 cat >"$XSTARTUP_SCRIPT" <<'EOF'
@@ -40,7 +73,7 @@ echo "  SSH tunnel: ssh -L $VNC_PORT:localhost:$VNC_PORT <host>"
 echo "Waiting for desktop session on $VNC_DISPLAY..."
 sleep 8
 
-DISPLAY="$VNC_DISPLAY" setsid -f google-chrome \
+DISPLAY="$VNC_DISPLAY" setsid -f "$CHROME_BIN" \
   --remote-debugging-port="$CDP_PORT" \
   --no-first-run \
   --disable-gpu \
@@ -59,8 +92,10 @@ for _ in $(seq 1 20); do
   sleep 1
 done
 
-if curl -s "http://localhost:$CDP_PORT/json/version" >/dev/null 2>&1; then
-  echo "Chrome CDP ready at http://localhost:$CDP_PORT"
+if curl -s "$CDP_URL/json/version" >/dev/null 2>&1; then
+  write_state
+  echo "Chrome CDP ready at $CDP_URL"
+  echo "Session state saved to $STATE_FILE"
   echo ""
   echo "If first time, connect via VNC to login to $APP_NAME."
   echo "Then use: $HINT_COMMAND"
