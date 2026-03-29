@@ -415,22 +415,52 @@ async def goto_url(cdp, url, wait=8):
     """Navigate to a Teams URL and read the content.
 
     If the URL contains parentMessageId (thread URL), automatically
-    opens the thread reply panel.
+    waits for the thread reply panel to appear without reloading.
     """
     safe_url = url.replace("'", "\\'")
     await cdp.evaluate(f"window.location.href = '{safe_url}'")
     await asyncio.sleep(wait)
-    # Reload to ensure thread reply UI is fully rendered
-    await reload_page(cdp, wait=5)
 
-    # If this is a thread URL, open the reply panel
+    # If this is a thread URL, wait for thread panel to appear
     is_thread = "parentMessageId" in url
     if is_thread:
-        opened = await open_thread_reply_panel(cdp)
-        if opened:
-            print("Thread reply panel opened", file=sys.stderr)
+        # Wait for thread panel to render (no reload — reload loses thread context)
+        for attempt in range(5):
+            panel_exists = await cdp.evaluate("""
+                (() => {
+                    const body = document.body.innerText || '';
+                    const lines = body.split('\\n');
+                    let ctxCount = 0;
+                    for (const line of lines) {
+                        if (line.includes('コンテキスト メニューあり')) ctxCount++;
+                    }
+                    // Thread panel present when we see >= 2 context menu markers
+                    // or a reply editor is visible
+                    const editors = document.querySelectorAll('[role="textbox"][contenteditable="true"]');
+                    let editorCount = 0;
+                    for (const e of editors) {
+                        const rect = e.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) editorCount++;
+                    }
+                    if (ctxCount >= 2 || editorCount > 0) return 'open';
+                    return 'not_yet';
+                })()
+            """)
+            if panel_exists == 'open':
+                print("Thread reply panel opened", file=sys.stderr)
+                break
+            # Try clicking the thread to open the panel
+            if attempt == 1:
+                await open_thread_reply_panel(cdp, max_retries=1)
+            await asyncio.sleep(3)
         else:
-            print("Warning: could not open thread reply panel", file=sys.stderr)
+            # Last resort: reload once and try
+            await reload_page(cdp, wait=5)
+            opened = await open_thread_reply_panel(cdp)
+            if opened:
+                print("Thread reply panel opened (after reload)", file=sys.stderr)
+            else:
+                print("Warning: could not open thread reply panel", file=sys.stderr)
 
     await read_current_chat(cdp)
 
