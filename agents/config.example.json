@@ -16,7 +16,9 @@
   },
   "keep": {
     "email": "your_email@gmail.com",
-    "master_token": "YOUR_MASTER_TOKEN"
+    "master_token": "YOUR_MASTER_TOKEN",
+    "state_file": "~/.config/agent-tools/keep-state.json",
+    "device_id": "OPTIONAL_ANDROID_DEVICE_ID"
   },
   "moneyforward": {
     "openai_model": "gpt-4.1-mini"

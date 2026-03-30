@@ -1,51 +1,50 @@
 # Google Keep アクセスガイド
 
-Google Keep へのアクセスは `keep-cli.py` (Chrome CDP 経由) で行う。
-Keep 用の Chrome は専用プロファイル・専用 CDP ポートで起動するため、他の CLI と競合しない。
-
-`gkeepapi` / `gpsoauth` ベースの認証は不安定なため、ブラウザ自動化方式に切り替えている。
+Google Keep へのアクセスは `keep-cli.py` (`gkeepapi` / Google Keep API ラッパー) で行う。
+Chrome CDP は使わない。
 
 ## 前提
 
 ```bash
-sudo apt install tigervnc-standalone-server google-chrome-stable
-pip3 install --user --break-system-packages websockets
+pip3 install --user --break-system-packages gkeepapi gpsoauth
 ```
 
 ## セットアップ
 
 ```bash
-# 1. VNC + Chrome を起動
-~/keep-start.sh
+# 1. 初回または token 切れ時に再認証
+~/keep-cli.py auth your_email@gmail.com
 
-# 2. 初回のみ VNC で Google Keep にログイン
-#    VNC 接続: localhost:5901
-#    SSH トンネル: ssh -L 5901:localhost:5901 <host>
+# 2. 以後は保存済み token を利用
+~/keep-cli.py list
 ```
-
-Keep の Chrome プロファイルは `/tmp/chrome-keep`、CDP ポートは `9221`。
 
 必要なら環境変数で上書きできる。
 
 ```bash
-KEEP_CDP_PORT=9323 KEEP_VNC_DISPLAY=:5 KEEP_VNC_PORT=5905 ~/keep-start.sh
-KEEP_CDP_URL=http://localhost:9323 python3 ~/keep-cli.py list
+KEEP_EMAIL=your_email@gmail.com \
+KEEP_MASTER_TOKEN=YOUR_MASTER_TOKEN \
+python3 ~/keep-cli.py list
 ```
 
 ## CLI ツール
 
 ```bash
-~/keep-cli.py list                                   # 表示中のノート一覧
+~/keep-cli.py auth your_email@gmail.com              # master_token を再取得して保存
+~/keep-cli.py list                                   # ノート一覧
 ~/keep-cli.py list --limit 50                        # 件数指定
 ~/keep-cli.py search <query>                         # Keep 内検索
 ~/keep-cli.py open "<query>"                         # ノートを開いて読む
-~/keep-cli.py read                                   # 現在開いているノートを読む
+~/keep-cli.py read                                   # 直前に開いたノートを読む
+~/keep-cli.py read "<query>"                         # 指定ノートを読む
 ~/keep-cli.py create "タイトル" "本文"                # テキストノート作成
-~/keep-cli.py dump                                   # ページ全文 (debug)
+~/keep-cli.py archive "<query>"                      # ノートをアーカイブ
+~/keep-cli.py dump "<query>"                         # ノート JSON (debug)
 ```
 
 ## 制約
 
-- Chrome と Google Keep セッションが起動中である必要がある
-- DOM 構造に依存するため、Google Keep の UI 変更で修正が必要になる
+- `auth` では Google アカウントのパスワード入力が必要
+- `master_token` の再取得可否は Google 側の認証ポリシーに依存する
 - 現状はテキストノート中心。画像、リマインダー、ラベル編集は未対応
+- Google Keep の非公式 API ラッパー依存のため、サーバー側変更で追従が必要になる場合がある

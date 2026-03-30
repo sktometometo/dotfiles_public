@@ -1,6 +1,6 @@
 # dotfiles_public
 
-dotfiles と AI エージェント用 CLI ツールの管理リポジトリ。
+dotfiles と AI エージェント用 CLI ツール / MCP 設定の管理リポジトリ。
 
 ## クイックスタート
 
@@ -23,6 +23,27 @@ cd ~/dotfiles_public
 | notion-browser-cli.py | Notion | `~/notion-browser-cli.py` | [notion-access.md](agents/notion-access.md) |
 | onenote-cli.py | OneNote | `~/onenote-cli.py` | [onenote-access.md](agents/onenote-access.md) |
 | teams-cli.py | Teams | `~/teams-cli.py` | [teams-access.md](agents/teams-access.md) |
+
+## Codex MCP / Skill
+
+Codex では、`freee` は公式 Remote MCP + 公式 Skill、`Todoist` は公式 `@doist/todoist-ai` MCP を使う。
+
+セットアップ:
+
+```bash
+./agents/setup_codex_integrations.sh
+```
+
+このスクリプトは次を行う:
+
+- `freee` MCP を `https://mcp.freee.co.jp/mcp` で登録
+- `freee-api-skill` を `freee/freee-mcp` からインストール
+- `Todoist` MCP を `~/dotfiles_public/agents/todoist-mcp.sh` 経由で登録
+
+詳細:
+
+- [agents/freee-access.md](agents/freee-access.md)
+- [agents/todoist-access.md](agents/todoist-access.md)
 
 ### 認証セットアップ
 
@@ -58,26 +79,16 @@ gcalcli --client-id=<client_id>.apps.googleusercontent.com init
 1. 前提パッケージをインストール:
 
 ```bash
-sudo apt install tigervnc-standalone-server xfce4 dbus-x11 google-chrome-stable
-pip3 install --user --break-system-packages websockets
+pip3 install --user --break-system-packages gkeepapi gpsoauth
 ```
 
-2. VNC + Chrome を起動:
+2. 初回または token 切れ時に再認証:
 
 ```bash
-~/keep-start.sh
+~/keep-cli.py auth your_email@gmail.com
 ```
 
-3. VNC で接続して Google Keep にログイン:
-
-```bash
-ssh -L 5901:localhost:5901 <host>   # リモートの場合
-vncviewer localhost:5901
-```
-
-Keep は専用 Chrome プロファイル `/tmp/chrome-keep`、CDP ポート `9223` を使う。
-
-4. ログイン完了後、CLI で操作:
+3. CLI で操作:
 
 ```bash
 python3 ~/keep-cli.py list
@@ -171,9 +182,10 @@ python3 ~/teams-cli.py chats
 | ファイル | 内容 |
 |---------|------|
 | `~/.config/agent-tools/config.json` | OneNote, Teams, Keep の認証情報・設定 |
+| `~/.config/agent-tools/todoist-api-key.txt` | Todoist MCP 用 API トークン |
 | `~/.config/himalaya/config.toml` | himalaya の IMAP/SMTP 設定 |
 | `~/.local/share/gcalcli/oauth` | gcalcli の OAuth トークン |
-| `/tmp/chrome-keep` | Google Keep 用 Chrome プロファイル |
+| `~/.config/agent-tools/keep-state.json` | Google Keep の同期状態・最終選択ノート |
 | `/tmp/chrome-teams3` | Teams 用 Chrome プロファイル |
 | `~/.config/agent-tools/chrome-notion` | Notion 用 Chrome プロファイル |
 

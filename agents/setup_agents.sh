@@ -155,4 +155,15 @@ else
 fi
 
 echo ""
+echo "=== Codex MCP ==="
+if command -v codex &>/dev/null; then
+    read -p "  Setup Codex MCP integrations (freee, Todoist)? [y/N] " answer
+    if [ "$answer" = "y" ]; then
+        "$AGENTS_DIR/setup_codex_integrations.sh"
+    fi
+else
+    echo "  codex: not found; skipping Codex MCP setup"
+fi
+
+echo ""
 echo "Agent tools setup done. See README.md for authentication setup."
