@@ -42,13 +42,6 @@ Todoist は公式 MCP サーバー `@doist/todoist-ai` を Codex から利用す
 - ツール: `codex mcp` + `~/dotfiles_public/agents/todoist-mcp.sh`
 - 詳細: [agents/todoist-access.md](agents/todoist-access.md)
 
-### freee
-
-freee は公式 MCP サーバー `freee/freee-mcp` と公式 Skill `freee-api-skill` を使う。Chrome CDP ベースの手順は legacy 扱い。
-
-- ツール: `codex mcp` + `freee-api-skill`
-- 詳細: [agents/freee-access.md](agents/freee-access.md)
-
 ### Generic Chrome Site
 
 任意サイトの探索・暫定操作を Chrome CDP 経由で行う汎用 CLI。

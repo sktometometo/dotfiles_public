@@ -5,13 +5,20 @@
 set -e
 
 AGENTS_DIR="$(cd "$(dirname "$0")"; pwd)"
+PRIVATE_FINANCE_DEPLOY="$HOME/dotfiles_private/agents/finance/deploy_finance_agents.sh"
 
 echo "Setting up agent tools from $AGENTS_DIR"
+
+if [ -x "$PRIVATE_FINANCE_DEPLOY" ]; then
+    echo ""
+    echo "=== Private finance deploy ==="
+    "$PRIVATE_FINANCE_DEPLOY"
+fi
 
 # ── Symlinks ──
 echo ""
 echo "=== Symlinks ==="
-for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py keep-start.sh freee-start.sh freee-xpra-start.sh gdocs-cli.py moneyforward-cli.py moneyforward-start.sh chrome-app-start.sh chrome-site-cli.py notion-cli.py notion-browser-cli.py notion-start.sh slack-cli.py slack-start.sh novnc-start.sh; do
+for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py keep-start.sh gdocs-cli.py chrome-app-start.sh chrome-site-cli.py notion-cli.py notion-browser-cli.py notion-start.sh slack-cli.py slack-start.sh novnc-start.sh; do
     src="$AGENTS_DIR/$f"
     dst="$HOME/$f"
     if [ -f "$src" ]; then
@@ -50,7 +57,7 @@ echo ""
 echo "=== Agent docs ==="
 AGENT_DOCS_DIR="$HOME/.config/agent-docs"
 mkdir -p "$AGENT_DOCS_DIR"
-for f in gmail-access.md gcal-access.md keep-access.md onenote-access.md gdocs-access.md teams-access.md moneyforward-access.md slack-access.md; do
+for f in gmail-access.md gcal-access.md keep-access.md onenote-access.md gdocs-access.md teams-access.md slack-access.md; do
     src="$AGENTS_DIR/$f"
     dst="$AGENT_DOCS_DIR/$f"
     if [ -f "$src" ]; then

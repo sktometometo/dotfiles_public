@@ -26,7 +26,7 @@ cd ~/dotfiles_public
 
 ## Codex MCP / Skill
 
-Codex では、`freee` は公式 Remote MCP + 公式 Skill、`Todoist` は公式 `@doist/todoist-ai` MCP を使う。
+Codex では、`Todoist` は公式 `@doist/todoist-ai` MCP を使う。
 
 セットアップ:
 
@@ -36,13 +36,10 @@ Codex では、`freee` は公式 Remote MCP + 公式 Skill、`Todoist` は公式
 
 このスクリプトは次を行う:
 
-- `freee` MCP を `https://mcp.freee.co.jp/mcp` で登録
-- `freee-api-skill` を `freee/freee-mcp` からインストール
 - `Todoist` MCP を `~/dotfiles_public/agents/todoist-mcp.sh` 経由で登録
 
 詳細:
 
-- [agents/freee-access.md](agents/freee-access.md)
 - [agents/todoist-access.md](agents/todoist-access.md)
 
 ### 認証セットアップ
