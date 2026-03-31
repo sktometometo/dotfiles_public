@@ -11,6 +11,9 @@ TOKEN_FILE = os.path.expanduser("~/.config/agent-tools/gdocs-token.json")
 SCOPES = [
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/presentations.readonly",
+    "https://www.googleapis.com/auth/calendar.readonly",
 ]
 
 
