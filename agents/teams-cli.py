@@ -32,7 +32,7 @@ class TeamsCDP(ChromeCDP):
     def __init__(self):
         super().__init__(
             CDP_URL,
-            lambda page: "teams" in page.get("url", "") or "teams" in page.get("title", "").lower(),
+            lambda page: any(h in page.get("url", "") for h in ("teams.cloud.microsoft", "teams.microsoft.com")),
         )
 
 
@@ -748,6 +748,130 @@ async def get_page_text(cdp):
     print(result)
 
 
+async def take_screenshot(cdp, out_path, *, full_page=False, format_="png"):
+    """Capture a screenshot of the current Teams page.
+
+    Uses the CDP `Page.captureScreenshot` method (Chrome DevTools Protocol).
+    Returns the absolute path that was written.
+
+    Parameters
+    ----------
+    out_path  : str, output file path (.png / .jpg)
+    full_page : bool, capture beyond the viewport when True
+    format_   : "png" | "jpeg"
+    """
+    import base64
+    import os
+
+    params = {"format": format_, "captureBeyondViewport": bool(full_page)}
+    if format_ == "jpeg":
+        params["quality"] = 85
+    resp = await cdp.cdp_call("Page.captureScreenshot", params, timeout=30)
+    b64 = resp.get("result", {}).get("data", "")
+    if not b64:
+        raise RuntimeError("Page.captureScreenshot returned no data")
+    out_path = os.path.abspath(os.path.expanduser(out_path))
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    with open(out_path, "wb") as f:
+        f.write(base64.b64decode(b64))
+    return out_path
+
+
+async def save_message_images(cdp, out_dir):
+    """Save every <img> inside the currently open chat/channel feed.
+
+    Iterates over <img> tags inside the message list and downloads each one
+    via fetch() inside the page context (so it inherits the Teams auth
+    cookies), then writes the raw bytes to disk. Returns the list of saved
+    paths.
+
+    Out filenames are zero-padded indexes plus the URL's basename or a
+    sha1 prefix for unique-but-stable names.
+    """
+    import base64
+    import hashlib
+    import os
+    import urllib.parse
+
+    out_dir = os.path.abspath(os.path.expanduser(out_dir))
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Collect candidate <img> URLs from the currently rendered message list.
+    # We target the message feed (data-tid="message-pane-list-viewport") to
+    # avoid grabbing chat-list avatars and other chrome.
+    js = r"""
+    (() => {
+        const root = document.querySelector('[data-tid="message-pane-list-viewport"]')
+                  || document.querySelector('[role="list"]')
+                  || document.body;
+        const imgs = Array.from(root.querySelectorAll('img'));
+        const urls = [];
+        for (const im of imgs) {
+            const src = im.currentSrc || im.src || '';
+            if (!src) continue;
+            // Skip tiny avatar / emoji images. Teams renders Skype emojis at
+            // ~20px and member avatars at <=32px; user-attached images are
+            // typically far larger.
+            const w = im.naturalWidth || im.width || 0;
+            const h = im.naturalHeight || im.height || 0;
+            if (w && w < 80) continue;
+            if (h && h < 80) continue;
+            // Skip data: SVG placeholders and emoji sprites.
+            if (src.startsWith('data:image/svg')) continue;
+            urls.push(src);
+        }
+        return Array.from(new Set(urls));
+    })();
+    """
+    urls = await cdp.evaluate(js)
+    if not urls:
+        print("No images found in the current message view.")
+        return []
+
+    saved = []
+    for idx, url in enumerate(urls):
+        # Fetch the image inside the page context so the Teams auth cookies
+        # / headers are sent automatically. Return as base64.
+        fetch_js = (
+            "(async () => {"
+            f"const r = await fetch({json.dumps(url)}, {{credentials: 'include'}});"
+            "if (!r.ok) return null;"
+            "const b = await r.blob();"
+            "const buf = await b.arrayBuffer();"
+            "const bytes = new Uint8Array(buf);"
+            "let bin = '';"
+            "for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);"
+            "return {ct: b.type, b64: btoa(bin)};"
+            "})()"
+        )
+        try:
+            result = await cdp.evaluate(fetch_js, timeout=30)
+        except Exception as e:
+            print(f"[skip] {url[:80]}: {e}")
+            continue
+        if not result or not result.get("b64"):
+            print(f"[skip] {url[:80]}: fetch failed")
+            continue
+
+        # Derive an output filename: prefer the URL's basename, fall back to
+        # a sha1 prefix so distinct URLs don't collide.
+        parsed = urllib.parse.urlparse(url)
+        base = os.path.basename(parsed.path)
+        if not base or "." not in base:
+            # Use sha1 prefix + extension from MIME (image/png -> .png).
+            digest = hashlib.sha1(url.encode()).hexdigest()[:10]
+            ct = result.get("ct", "image/png")
+            ext = "." + ct.split("/")[-1].split(";")[0]
+            base = f"{digest}{ext}"
+        out_path = os.path.join(out_dir, f"{idx:02d}_{base}")
+        with open(out_path, "wb") as f:
+            f.write(base64.b64decode(result["b64"]))
+        saved.append(out_path)
+        print(f"[{idx:02d}] {out_path}  ({result.get('ct', '?')})")
+
+    return saved
+
+
 async def main():
     if len(sys.argv) < 2:
         print("Usage: teams-cli.py <command> [args]")
@@ -766,6 +890,8 @@ async def main():
         print("  goto <url>               Navigate to a Teams URL and read it")
         print("  reload                   Reload the current page")
         print("  dump                     Dump full page text (debug)")
+        print("  screenshot <path> [--full]   Save a PNG screenshot of the page")
+        print("  images <dir>             Save all <img> tags from the current chat to <dir>")
         print()
         print("The post command reads body from argument or stdin (if '-').")
         print()
@@ -822,6 +948,15 @@ async def main():
             print("Page reloaded")
         elif cmd == "dump":
             await get_page_text(cdp)
+        elif cmd == "screenshot" and len(sys.argv) >= 3:
+            out_path = sys.argv[2]
+            full_page = "--full" in sys.argv[3:]
+            saved = await take_screenshot(cdp, out_path, full_page=full_page)
+            print(f"Saved: {saved}")
+        elif cmd == "images" and len(sys.argv) >= 3:
+            out_dir = sys.argv[2]
+            saved = await save_message_images(cdp, out_dir)
+            print(f"\nSaved {len(saved)} image(s) to {out_dir}")
         else:
             print(f"Unknown command: {cmd}")
     finally:
