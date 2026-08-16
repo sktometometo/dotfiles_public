@@ -682,6 +682,30 @@ async def read_thread(cdp, query):
                 threadButton.click();
                 return 'clicked_reply_link';
             }}
+            // Chat (1:1 / group) reply summaries use a dedicated class instead of
+            // being wrapped in a treeitem/thread container. closest('[class*="fui-ChatMessage"]')
+            // matches the innermost wrapper (e.g. fui-ChatMessageGridGroup) which only
+            // contains the summary button itself, not the original message body, so
+            // walk up until the ancestor's text is meaningfully longer than the summary.
+            const summaryEls = document.querySelectorAll('.fui-ChatMessage__repliesSummary, [class*="repliesSummary"]');
+            let summaryButton = null;
+            let summaryButtonLen = Infinity;
+            for (const el of summaryEls) {{
+                let bubble = el.parentElement;
+                for (let i = 0; i < 10 && bubble; i++) {{
+                    if (bubble.textContent.length > el.textContent.length + 20) break;
+                    bubble = bubble.parentElement;
+                }}
+                const text = bubble ? bubble.textContent : '';
+                if (text && text.includes(target) && text.length < summaryButtonLen) {{
+                    summaryButton = el;
+                    summaryButtonLen = text.length;
+                }}
+            }}
+            if (summaryButton) {{
+                summaryButton.click();
+                return 'clicked_reply_summary';
+            }}
             // Fallback: click on the thread post itself
             const items = document.querySelectorAll('[role="treeitem"], [role="listitem"], [role="link"], a, button');
             let best = null;
@@ -740,6 +764,117 @@ async def read_thread(cdp, query):
     else:
         # Fallback: print everything
         print(result)
+
+
+async def _install_copy_link_hook(cdp):
+    """Install hooks so Teams' "Copy link" target is captured into window.__copiedLink.
+
+    Teams writes the deep link through navigator.clipboard.writeText (and in some
+    paths via execCommand('copy') on a hidden element). We intercept both and keep
+    only values that look like a Teams message/channel deep link. This avoids the
+    clipboard read permission / focus requirement entirely.
+    """
+    await cdp.evaluate(
+        """
+        (() => {
+            window.__copiedLink = null;
+            const take = (t) => {
+                if (typeof t === 'string' && /\\/l\\/(message|channel)\\//i.test(t)) {
+                    window.__copiedLink = t;
+                }
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText && !navigator.clipboard.__hooked) {
+                const o = navigator.clipboard.writeText.bind(navigator.clipboard);
+                navigator.clipboard.writeText = function (t) { take(t); return o(t); };
+                navigator.clipboard.__hooked = true;
+            }
+            if (!document.__copyHooked) {
+                const oe = document.execCommand.bind(document);
+                document.execCommand = function (c, ...a) {
+                    if (String(c).toLowerCase() === 'copy') {
+                        const ae = document.activeElement;
+                        take(ae && (ae.value || ae.textContent) || '');
+                    }
+                    return oe(c, ...a);
+                };
+                document.__copyHooked = true;
+            }
+            return 'hooked';
+        })()
+        """
+    )
+
+
+async def copy_message_link(cdp, query):
+    """Find a message by matching text, trigger Teams' "Copy link", print the deep link.
+
+    Works on the currently open chat/channel. The query is matched against message
+    text (shortest containing match wins, mirroring click_chat). The message's
+    overflow menu is opened and "リンクのコピー" / "Copy link" is clicked; the URL is
+    captured via the writeText/execCommand hook rather than reading the clipboard.
+    """
+    await _install_copy_link_hook(cdp)
+    safe_query = query.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+
+    # Locate the target message element (closest [data-mid] ancestor of the match),
+    # scroll it into view, hover to reveal the toolbar, and open the overflow menu.
+    open_result = await cdp.evaluate(f"""
+        (() => {{
+            const target = '{safe_query}';
+            let best = null, bestLen = Infinity;
+            for (const el of document.querySelectorAll('[data-mid]')) {{
+                const t = el.textContent || '';
+                if (t.includes(target) && t.length < bestLen) {{ best = el; bestLen = t.length; }}
+            }}
+            if (!best) return 'not_found';
+            best.scrollIntoView({{block: 'center'}});
+            const r = best.getBoundingClientRect();
+            for (const type of ['mouseover', 'mouseenter', 'mousemove']) {{
+                best.dispatchEvent(new MouseEvent(type, {{bubbles: true, clientX: r.x + 50, clientY: r.y + 10}}));
+            }}
+            const more = [...best.querySelectorAll('button,[role="button"]')]
+                    .find(b => /その他のオプション|more options|more actions/i.test(b.getAttribute('aria-label') || ''))
+                || [...document.querySelectorAll('button,[role="button"]')]
+                    .find(b => /その他のオプション|more options|more actions/i.test(b.getAttribute('aria-label') || ''));
+            if (!more) return 'no_menu_button';
+            more.click();
+            return 'menu_opened:' + best.getAttribute('data-mid');
+        }})()
+    """)
+    if open_result == "not_found":
+        print(f"Message not found: {query}", file=sys.stderr)
+        return None
+    if open_result == "no_menu_button":
+        print("Could not open the message overflow menu (hover/toolbar failed).", file=sys.stderr)
+        return None
+
+    await asyncio.sleep(2)
+
+    # Click the "Copy link" menu item.
+    click_result = await cdp.evaluate("""
+        (() => {
+            const it = [...document.querySelectorAll('[role="menuitem"],button,[role="button"]')]
+                .find(e => /^リンクのコピー$|^copy link$/i.test((e.innerText || e.textContent || '').trim()));
+            if (!it) return 'no_item';
+            it.click();
+            return 'clicked';
+        })()
+    """)
+    if click_result == "no_item":
+        print("'リンクのコピー' menu item not found for this message.", file=sys.stderr)
+        return None
+
+    # Poll the hook for the captured URL.
+    for _ in range(10):
+        await asyncio.sleep(0.5)
+        url = await cdp.evaluate("window.__copiedLink")
+        if url:
+            # Normalize host to teams.microsoft.com for portability of the deep link.
+            url = url.replace("https://teams.cloud.microsoft/", "https://teams.microsoft.com/")
+            print(url)
+            return url
+    print("Copy succeeded but no deep link was captured.", file=sys.stderr)
+    return None
 
 
 async def get_page_text(cdp):
@@ -887,6 +1022,7 @@ async def main():
         print("  post <body>              Post a message to the current channel")
         print("  post -s <subject> <body> Post with a subject line")
         print("  thread <query>           Open a thread by matching text and read replies")
+        print("  link <query>             Copy the Teams deep link of a matching message")
         print("  goto <url>               Navigate to a Teams URL and read it")
         print("  reload                   Reload the current page")
         print("  dump                     Dump full page text (debug)")

@@ -76,6 +76,65 @@ python3 ~/teams-cli.py dump                               # ページ全テキ�
 
 組織のキーと名前は `~/.config/agent-tools/config.json` の `teams.orgs` で定義する。
 
+## MCP サーバー (Graph API 不要の外部テナント向け)
+
+`teams-cli.py` と同じロジックを MCP (Model Context Protocol) サーバーとしても提供している。
+Graph API のチャット読み取りスコープが無効な外部テナントでも、Teams 新クライアントの
+DOM を CDP 経由で読む方式のため利用可能。Claude Code に限らず、stdio 対応の MCP クライアント
+（Claude Desktop 等）から `tool_use` として直接呼び出せる。
+
+実体: `~/dotfiles_public/agents/teams-mcp-server.py`（`~/teams-mcp-server.py` にシンボリックリンク）
+依存: `pip3 install --user --break-system-packages mcp`（`setup_agents.sh` でインストール確認可）
+
+### 起動前提
+
+`teams-cli.py` と同じく、事前に `~/teams-start.sh` で VNC + Chrome を起動し、Teams にログイン済みであること。
+
+### Claude Code への登録
+
+```bash
+claude mcp add teams -- python3 ~/teams-mcp-server.py
+```
+
+または `~/.claude.json` / プロジェクトの `.mcp.json` に直接:
+
+```json
+{
+  "mcpServers": {
+    "teams": {
+      "command": "python3",
+      "args": ["/home/shinjo/teams-mcp-server.py"]
+    }
+  }
+}
+```
+
+### 提供ツール
+
+`teams-cli.py` の各コマンドに対応する形で以下を公開している。
+
+- `teams_orgs` / `teams_switch_org(org_key)`
+- `teams_list_chats` / `teams_list_teams`
+- `teams_open_channel(team_name, channel_name)` / `teams_open_chat(name)`
+- `teams_read_current` / `teams_read_thread(query)` / `teams_goto(url)`
+- `teams_post(body, subject)`
+- `teams_copy_message_link(query)`
+- `teams_reload` / `teams_dump_page`
+- `teams_screenshot(out_path, full_page)` / `teams_save_images(out_dir)`
+
+### 動作確認 (単体)
+
+```bash
+python3 ~/dotfiles_public/agents/teams-mcp-server.py
+# stdio で待受する。手動テストは MCP クライアント経由 (ClientSession) で行う。
+```
+
+### 制約
+
+`teams-cli.py` と同じ制約（VNC/Chrome 常駐必須、CDP ポート既定 9222 など）を継承する。
+各ツール呼び出しごとに CDP 接続を張り直す実装のため、連続呼び出し時のレイテンシは
+CLI を都度起動する場合と同程度。
+
 ## SharePoint ファイルダウンロード
 
 Teams チャネルに添付されたファイルは SharePoint に保存されている。CDP 経由でブラウザの localStorage からトークンを取得し、SharePoint REST API でダウンロード可能。

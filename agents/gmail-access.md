@@ -33,6 +33,7 @@ chmod 600 ~/.config/agent-tools/gmail-app-password.txt
 ```toml
 [accounts.<account_name>]
 email = "<your_email>"
+downloads-dir = "~/Downloads"
 folder.aliases.inbox = "INBOX"
 folder.aliases.sent = "[Gmail]/Sent Mail"
 folder.aliases.drafts = "[Gmail]/Drafts"
@@ -72,6 +73,7 @@ Google Cloud Console でのプロジェクト設定が必要だが、アプリ�
 ```toml
 [accounts.<account_name>]
 email = "<your_email>"
+downloads-dir = "~/Downloads"
 folder.aliases.inbox = "INBOX"
 folder.aliases.sent = "[Gmail]/Sent Mail"
 folder.aliases.drafts = "[Gmail]/Drafts"
@@ -140,8 +142,16 @@ himalaya message forward <id>
 himalaya message move <id> "[Gmail]/Trash"
 himalaya message delete <id>
 
+# 添付ファイル
+himalaya attachment download <id>                    # 設定の downloads-dir に保存
+himalaya attachment download <id1> <id2> ...          # 複数メールをまとめて
+himalaya attachment download <id> -f "[Gmail]/Sent Mail"  # 別フォルダから
+himalaya attachment download <id> -d /tmp/attachments  # 保存先を上書き
+
 # フォルダ
 himalaya folder list
 ```
+
+添付ファイルの保存先はアカウント設定の `downloads-dir` で指定する（未指定なら `XDG_DOWNLOAD_DIR`）。`-d/--downloads-dir` で1回限り上書きできる。保存先ディレクトリは事前に存在している必要があり、自動作成はされない。ファイル名なしのパートは UUID 形式で保存される。
 
 エージェントから使う場合は `--output json` を付けると構造化データが得られる。

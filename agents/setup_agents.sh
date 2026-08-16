@@ -18,7 +18,7 @@ fi
 # ── Symlinks ──
 echo ""
 echo "=== Symlinks ==="
-for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py keep-start.sh gdocs-cli.py chrome-app-start.sh chrome-site-cli.py notion-cli.py notion-browser-cli.py notion-start.sh slack-cli.py slack-start.sh entra-start.sh novnc-start.sh agent-tools-doctor.py; do
+for f in teams-cli.py teams-mcp-server.py teams-start.sh onenote-cli.py keep-cli.py keep-start.sh gdocs-cli.py chrome-app-start.sh chrome-site-cli.py notion-cli.py notion-browser-cli.py notion-start.sh slack-cli.py slack-start.sh entra-start.sh novnc-start.sh agent-tools-doctor.py; do
     src="$AGENTS_DIR/$f"
     dst="$HOME/$f"
     if [ -f "$src" ]; then
@@ -117,6 +117,17 @@ else
     if [ "$answer" = "y" ]; then
         pip3 install --user --break-system-packages websockets
         echo "  websockets installed"
+    fi
+fi
+
+# mcp (Teams MCP server dependency)
+if python3 -c "import mcp" &>/dev/null; then
+    echo "  mcp: already installed"
+else
+    read -p "  Install mcp (Teams MCP server dependency)? [y/N] " answer
+    if [ "$answer" = "y" ]; then
+        pip3 install --user --break-system-packages mcp
+        echo "  mcp installed"
     fi
 fi
 
