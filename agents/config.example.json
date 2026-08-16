@@ -1,7 +1,9 @@
 {
   "onenote": {
     "client_id": "YOUR_CLIENT_ID",
-    "token_file": "~/onenotemcp/.access-token.txt",
+    "tenant": "consumers",
+    "scopes": ["Notes.ReadWrite", "offline_access"],
+    "token_file": "~/.config/agent-tools/onenote-token.json",
     "notebooks": {
       "mynotebook": "NOTEBOOK_ID"
     },

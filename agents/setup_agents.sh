@@ -18,7 +18,7 @@ fi
 # ── Symlinks ──
 echo ""
 echo "=== Symlinks ==="
-for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py keep-start.sh gdocs-cli.py chrome-app-start.sh chrome-site-cli.py notion-cli.py notion-browser-cli.py notion-start.sh slack-cli.py slack-start.sh novnc-start.sh; do
+for f in teams-cli.py teams-start.sh onenote-cli.py keep-cli.py keep-start.sh gdocs-cli.py chrome-app-start.sh chrome-site-cli.py notion-cli.py notion-browser-cli.py notion-start.sh slack-cli.py slack-start.sh entra-start.sh novnc-start.sh agent-tools-doctor.py; do
     src="$AGENTS_DIR/$f"
     dst="$HOME/$f"
     if [ -f "$src" ]; then
@@ -76,6 +76,11 @@ if [ ! -f "$CONFIG_FILE" ]; then
     cp "$AGENTS_DIR/config.example.json" "$CONFIG_FILE"
     echo "  Created $CONFIG_FILE (edit to add credentials)"
 fi
+chmod 600 "$CONFIG_FILE"
+
+echo ""
+echo "=== Health check ==="
+python3 "$AGENTS_DIR/agent-tools-doctor.py"
 
 # ── Install tools ──
 echo ""

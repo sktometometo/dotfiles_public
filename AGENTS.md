@@ -49,6 +49,13 @@ Todoist は公式 MCP サーバー `@doist/todoist-ai` を Codex から利用す
 - ツール: `~/chrome-site-cli.py`, `~/chrome-app-start.sh`
 - 詳細: [agents/chrome-site-access.md](agents/chrome-site-access.md)
 
+### 操作基盤の診断
+
+各CLI、依存パッケージ、設定権限、VNC/CDPの稼働状態をまとめて確認する。
+
+- ツール: `~/agent-tools-doctor.py`
+- サービス定義: [agents/services.json](agents/services.json)
+
 ### OneNote
 
 OneNote のノートブック・セクション・ページを Microsoft Graph API 経由で読み書きする CLI ツール。

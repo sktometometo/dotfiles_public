@@ -6,6 +6,7 @@
 #   ~/novnc-start.sh          # start all
 #   ~/novnc-start.sh stop     # stop all
 #   ~/novnc-start.sh status   # show running proxies
+#   ~/novnc-start.sh portal   # only regenerate portal.html
 #
 # Web ports: 6080 + display number
 #   :1  → http://localhost:6081
@@ -15,26 +16,44 @@
 
 set -euo pipefail
 
+SCRIPT_PATH="$(readlink -f "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")"; pwd)"
+SERVICES_FILE="${AGENT_SERVICES_FILE:-$SCRIPT_DIR/services.json}"
 NOVNC_DIR="${NOVNC_DIR:-$HOME/.local/share/noVNC}"
+WEBSOCKIFY_BIN="${WEBSOCKIFY_BIN:-}"
+if [ -z "$WEBSOCKIFY_BIN" ]; then
+  if command -v websockify &>/dev/null; then
+    WEBSOCKIFY_BIN="$(command -v websockify)"
+  elif [ -x "$HOME/.cache/agent-tools/moneyforward-mcp-venv/bin/websockify" ]; then
+    WEBSOCKIFY_BIN="$HOME/.cache/agent-tools/moneyforward-mcp-venv/bin/websockify"
+  else
+    WEBSOCKIFY_BIN="websockify"
+  fi
+fi
 PIDDIR="$HOME/.local/state/novnc"
 mkdir -p "$PIDDIR"
 
 # ── Port map ──
-# Format: "display vnc_port web_port label"
-DISPLAYS=(
-  "1  5901 6081 Keep"
-  "2  5902 6082 Teams"
-  "3  5903 6083 Slack"
-  "4  5904 6084 MoneyForward"
-  "5  5905 6085 Notion"
-  "11 5911 6091 Concur"
+# services.json is the single source of truth.
+if [ ! -f "$SERVICES_FILE" ]; then
+  echo "ERROR: service inventory not found: $SERVICES_FILE" >&2
+  exit 1
+fi
+mapfile -t DISPLAYS < <(python3 - "$SERVICES_FILE" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    for item in json.load(handle)["services"]:
+        print(item["display"], item["vnc_port"], item["novnc_port"], item["group"], item["label"])
+PY
 )
 
 cmd="${1:-start}"
 
 stop_all() {
   for entry in "${DISPLAYS[@]}"; do
-    read -r disp vnc_port web_port label <<< "$entry"
+    read -r disp vnc_port web_port group label <<< "$entry"
     pidfile="$PIDDIR/novnc-$disp.pid"
     if [ -f "$pidfile" ]; then
       pid=$(cat "$pidfile")
@@ -53,9 +72,9 @@ start_all() {
     echo "Install: git clone --depth 1 https://github.com/novnc/noVNC.git $NOVNC_DIR"
     exit 1
   fi
-  if ! command -v websockify &>/dev/null; then
+  if ! command -v "$WEBSOCKIFY_BIN" &>/dev/null && [ ! -x "$WEBSOCKIFY_BIN" ]; then
     echo "ERROR: websockify not found"
-    echo "Install: pip3 install --user websockify"
+    echo "Install it or set WEBSOCKIFY_BIN=/path/to/websockify"
     exit 1
   fi
 
@@ -63,7 +82,7 @@ start_all() {
   generate_portal
 
   for entry in "${DISPLAYS[@]}"; do
-    read -r disp vnc_port web_port label <<< "$entry"
+    read -r disp vnc_port web_port group label <<< "$entry"
     pidfile="$PIDDIR/novnc-$disp.pid"
 
     # Skip if already running
@@ -79,10 +98,10 @@ start_all() {
       continue
     fi
 
-    websockify \
+    "$WEBSOCKIFY_BIN" \
       --web="$NOVNC_DIR" \
       --daemon \
-      "$web_port" \
+      "127.0.0.1:$web_port" \
       "localhost:$vnc_port" \
       2>/dev/null
 
@@ -98,7 +117,7 @@ start_all() {
   done
 
   echo ""
-  echo "Portal: http://localhost:6080/portal.html"
+  echo "Portal: http://localhost:6084/portal.html"
   echo "  or open individual displays with the URLs above."
 }
 
@@ -106,7 +125,7 @@ show_status() {
   printf "%-6s %-15s %-8s %-8s %s\n" "Disp" "Tool" "WebPort" "PID" "Status"
   printf "%-6s %-15s %-8s %-8s %s\n" "----" "----" "-------" "---" "------"
   for entry in "${DISPLAYS[@]}"; do
-    read -r disp vnc_port web_port label <<< "$entry"
+    read -r disp vnc_port web_port group label <<< "$entry"
     pidfile="$PIDDIR/novnc-$disp.pid"
     if [ -f "$pidfile" ]; then
       pid=$(cat "$pidfile")
@@ -151,23 +170,32 @@ generate_portal() {
 <div class="section">
 <h3>Personal Tools</h3>
 <div class="grid">
-  <a class="card" href="/vnc.html?autoconnect=true&port=6081"><h2>Keep</h2><div class="port">:1 &mdash; port 6081</div></a>
-  <a class="card" href="/vnc.html?autoconnect=true&port=6082"><h2>Teams</h2><div class="port">:2 &mdash; port 6082</div></a>
-  <a class="card" href="/vnc.html?autoconnect=true&port=6083"><h2>Slack</h2><div class="port">:3 &mdash; port 6083</div></a>
-  <a class="card" href="/vnc.html?autoconnect=true&port=6084"><h2>MoneyForward</h2><div class="port">:4 &mdash; port 6084</div></a>
-  <a class="card" href="/vnc.html?autoconnect=true&port=6085"><h2>Notion</h2><div class="port">:5 &mdash; port 6085</div></a>
-</div>
-</div>
+HTMLEOF
 
-<div class="section">
-<h3>Work Tools (pfr-mics-tools)</h3>
-<div class="grid">
-  <a class="card" href="/vnc.html?autoconnect=true&port=6091"><h2>Concur</h2><div class="port">:11 &mdash; port 6091</div></a>
-</div>
-</div>
+  local entry disp vnc_port web_port group label
+  for entry in "${DISPLAYS[@]}"; do
+    read -r disp vnc_port web_port group label <<< "$entry"
+    if [ "$group" = "personal" ]; then
+      printf '  <a class="card" href="/vnc.html?autoconnect=true&amp;port=%s"><h2>%s</h2><div class="port">:%s &mdash; port %s</div></a>\n' \
+        "$web_port" "$label" "$disp" "$web_port" >> "$portal"
+    fi
+  done
 
-</body>
-</html>
+  cat >> "$portal" << 'HTMLEOF'
+</div></div>
+<div class="section"><h3>Work Tools</h3><div class="grid">
+HTMLEOF
+
+  for entry in "${DISPLAYS[@]}"; do
+    read -r disp vnc_port web_port group label <<< "$entry"
+    if [ "$group" = "work" ]; then
+      printf '  <a class="card" href="/vnc.html?autoconnect=true&amp;port=%s"><h2>%s</h2><div class="port">:%s &mdash; port %s</div></a>\n' \
+        "$web_port" "$label" "$disp" "$web_port" >> "$portal"
+    fi
+  done
+
+  cat >> "$portal" << 'HTMLEOF'
+</div></div></body></html>
 HTMLEOF
 }
 
@@ -175,6 +203,7 @@ case "$cmd" in
   start)   start_all ;;
   stop)    stop_all ;;
   status)  show_status ;;
+  portal)  generate_portal; echo "Generated: $NOVNC_DIR/portal.html" ;;
   restart) stop_all; sleep 1; start_all ;;
-  *)       echo "Usage: $0 {start|stop|status|restart}" ;;
+  *)       echo "Usage: $0 {start|stop|status|portal|restart}" ;;
 esac

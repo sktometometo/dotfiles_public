@@ -106,7 +106,7 @@ api_url = f"{SP_SITE}/_api/web/GetFolderByServerRelativeUrl('{encoded_folder}')/
 
 - VNC + Chrome が起動している必要がある
 - `open` は textContent の部分一致でクリック対象を選択（最短一致）
-- Chrome セッション有効中のみトークンを保持（`/tmp/chrome-teams3` に永続化）
+- Chromeセッションは`~/.config/agent-tools/chrome-teams`に保持する。ディレクトリには認証状態が含まれるため共有・commitしない
 - Teams 用の CDP ポート既定値は `9222`
 
 必要なら環境変数で上書きできる。

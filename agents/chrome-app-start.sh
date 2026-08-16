@@ -16,6 +16,7 @@ LOG_FILE="$5"
 HINT_COMMAND="$6"
 VNC_DISPLAY="${7:-:1}"
 VNC_PORT="${8:-5901}"
+VNC_SECURITY_TYPES="${CHROME_APP_VNC_SECURITY_TYPES:-VncAuth}"
 XSTARTUP_SCRIPT="$HOME/.vnc/xstartup-agent"
 CHROME_BIN="${CHROME_APP_CHROME_BIN:-google-chrome}"
 SESSION_STATE_DIR="${CHROME_APP_STATE_DIR:-$HOME/.cache/agent-tools/chrome-sessions}"
@@ -65,7 +66,7 @@ chmod 755 "$XSTARTUP_SCRIPT"
 vncserver -kill "$VNC_DISPLAY" 2>/dev/null || true
 sleep 2
 
-vncserver "$VNC_DISPLAY" -geometry 1920x1080 -depth 24 -xstartup "$XSTARTUP_SCRIPT" 2>&1
+vncserver "$VNC_DISPLAY" -geometry 1920x1080 -depth 24 -xstartup "$XSTARTUP_SCRIPT" -SecurityTypes "$VNC_SECURITY_TYPES" 2>&1
 echo "VNC started on port $VNC_PORT (display $VNC_DISPLAY) for $APP_NAME"
 echo "  Connect: vncviewer localhost:$VNC_PORT"
 echo "  SSH tunnel: ssh -L $VNC_PORT:localhost:$VNC_PORT <host>"
@@ -75,11 +76,13 @@ sleep 8
 
 DISPLAY="$VNC_DISPLAY" setsid -f "$CHROME_BIN" \
   --remote-debugging-port="$CDP_PORT" \
+  --remote-debugging-address=127.0.0.1 \
   --no-first-run \
+  --start-maximized \
   --disable-gpu \
-  --disable-software-rasterizer \
   --disable-dev-shm-usage \
   --no-sandbox \
+  --ozone-platform=x11 \
   --password-store=basic \
   --user-data-dir="$CHROME_DATA_DIR" \
   "$APP_URL" >"$LOG_FILE" 2>&1 &

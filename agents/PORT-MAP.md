@@ -8,8 +8,9 @@
 | Keep           | :1          | 5901     | 9221     | 6081        | https://keep.google.com        |
 | Teams          | :2          | 5902     | 9222     | 6082        | https://teams.microsoft.com    |
 | Slack          | :3          | 5903     | 9223     | 6083        | https://app.slack.com          |
-| MoneyForward   | :4          | 5904     | 9224     | 6084        | https://moneyforward.com       |
+| MoneyForward   | :24         | 5924     | 9224     | 6084        | https://moneyforward.com       |
 | Notion         | :5          | 5905     | 9225     | 6085        | https://www.notion.so          |
+| Microsoft Entra| :6          | 5906     | 9226     | 6086        | https://entra.microsoft.com    |
 
 ### pfr-mics-tools (`:1X` 番台)
 
@@ -22,10 +23,11 @@
 ```bash
 ~/novnc-start.sh            # 全ディスプレイの noVNC プロキシを起動
 ~/novnc-start.sh status     # 状態確認
+~/novnc-start.sh portal     # ポータルHTMLだけ再生成
 ~/novnc-start.sh stop       # 全停止
 ```
 
-ポータルページ: http://localhost:6080/portal.html
+ポータルページ: http://localhost:6084/portal.html
 （個別アクセス: http://localhost:{noVNC Port}）
 
 ## 環境変数での上書き例
@@ -48,7 +50,9 @@ TEAMS_CDP_URL=http://localhost:9322 python3 ~/teams-cli.py chats
 - VNC Port: `5900 + Display番号`
 - CDP Port: `9220 + Display番号`
 - noVNC (Web): `6080 + Display番号`
-- 次の空き: `:6` / `5906` / `9226` / `6086`
+- 次の空き: `:7` / `5907` / `9227` / `6087`
+
+MoneyForwardは既存サービスとの互換性維持のため、VNC displayだけ`:24`を使う例外。CDP/noVNCは従来の`9224`/`6084`を維持する。機械可読な正本は`services.json`。
 
 ### pfr-mics-tools（社内ツール: `:11`〜`:19`）
 

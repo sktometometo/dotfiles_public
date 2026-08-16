@@ -135,11 +135,19 @@ async def main():
                         }}
                     }}
                     if (!best) return {{ok: false, message: 'not found'}};
-                    best.click();
-                    return {{ok: true, message: bestText.substring(0, 200)}};
+                    const rect = best.getBoundingClientRect();
+                    return {{
+                        ok: true,
+                        message: bestText.substring(0, 200),
+                        x: rect.left + rect.width / 2,
+                        y: rect.top + rect.height / 2
+                    }};
                 }})()
                 """
             )
+            if result.get("ok"):
+                await cdp.click_at(result["x"], result["y"])
+                result = {"ok": True, "message": result["message"]}
             _render(result)
 
         await cmd_with_client(_click)

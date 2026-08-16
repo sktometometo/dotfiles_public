@@ -3,18 +3,25 @@
 
 import json
 import os
+import stat
 import sys
 import time
 import html
+import base64
+import hashlib
+import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
+import webbrowser
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from html.parser import HTMLParser
 
-CONFIG_FILE = os.path.expanduser("~/.config/agent-tools/config.json")
-SCOPES = "Notes.Read Notes.ReadWrite Notes.Create User.Read offline_access"
+CONFIG_FILE = os.path.expanduser(
+    os.environ.get("ONENOTE_CONFIG_FILE", "~/.config/agent-tools/config.json")
+)
 GRAPH_BASE = "https://graph.microsoft.com/v1.0/me/onenote"
-LOGIN_BASE = "https://login.microsoftonline.com/consumers/oauth2/v2.0"
+HTTP_TIMEOUT = 30
 
 
 def load_config():
@@ -27,8 +34,14 @@ def load_config():
 
 _config = load_config()
 CLIENT_ID = _config.get("client_id", "")
+TENANT = os.environ.get("ONENOTE_TENANT", _config.get("tenant", "consumers"))
+LOGIN_BASE = f"https://login.microsoftonline.com/{TENANT}/oauth2/v2.0"
+SCOPES = " ".join(_config.get("scopes", ["Notes.ReadWrite", "offline_access"]))
 TOKEN_FILE = os.path.expanduser(
-    os.environ.get("ONENOTE_TOKEN_FILE", _config.get("token_file", "~/onenotemcp/.access-token.txt"))
+    os.environ.get(
+        "ONENOTE_TOKEN_FILE",
+        _config.get("token_file", "~/.config/agent-tools/onenote-token.json"),
+    )
 )
 KNOWN_NOTEBOOKS = _config.get("notebooks", {})
 KNOWN_SECTIONS = _config.get("sections", {})
@@ -73,8 +86,8 @@ def html_to_text(html):
 
 
 def encode_id(oid):
-    """URL-encode '!' in OneNote IDs."""
-    return oid.replace("!", "%21")
+    """URL-encode a OneNote ID as one path segment."""
+    return urllib.parse.quote(oid, safe="")
 
 
 def text_to_html(text):
@@ -104,15 +117,25 @@ class OneNoteAPI:
     def _load_token(self):
         if self.token_data:
             return self.token_data["token"]
-        with open(TOKEN_FILE) as f:
-            self.token_data = json.load(f)
-        return self.token_data["token"]
+        try:
+            with open(TOKEN_FILE, encoding="utf-8") as f:
+                self.token_data = json.load(f)
+            token = self.token_data.get("token") or self.token_data.get("access_token")
+            if not token:
+                raise RuntimeError("token file does not contain an access token")
+            self.token_data["token"] = token
+            return token
+        except FileNotFoundError as exc:
+            raise RuntimeError(f"Token not found: {TOKEN_FILE}. Run: onenote-cli.py auth") from exc
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Invalid token JSON: {TOKEN_FILE}") from exc
 
     def _save_token(self, data):
         self.token_data = data
         os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
-        with open(TOKEN_FILE, "w") as f:
+        with open(TOKEN_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+        os.chmod(TOKEN_FILE, 0o600)
 
     def _refresh_token(self):
         rt = self.token_data.get("refresh_token", "")
@@ -125,7 +148,7 @@ class OneNoteAPI:
             "scope": SCOPES,
         }).encode()
         req = urllib.request.Request(f"{LOGIN_BASE}/token", data=params)
-        resp = json.loads(urllib.request.urlopen(req).read())
+        resp = json.loads(urllib.request.urlopen(req, timeout=HTTP_TIMEOUT).read())
         if "access_token" not in resp:
             raise RuntimeError(f"Token refresh failed: {resp}")
         new_data = {
@@ -146,8 +169,9 @@ class OneNoteAPI:
             req = urllib.request.Request(url)
             req.add_header("Authorization", f"Bearer {token}")
             req.add_header("Accept", accept)
+            req.add_header("User-Agent", "dotfiles-public-onenote-cli/1.0")
             try:
-                resp = urllib.request.urlopen(req)
+                resp = urllib.request.urlopen(req, timeout=HTTP_TIMEOUT)
                 if accept == "application/json":
                     return json.loads(resp.read())
                 return resp.read().decode("utf-8", errors="replace")
@@ -157,6 +181,8 @@ class OneNoteAPI:
                     continue
                 body = e.read().decode("utf-8", errors="replace")
                 raise RuntimeError(f"API error {e.code}: {body}")
+            except urllib.error.URLError as e:
+                raise RuntimeError(f"Network error: {e.reason}") from e
 
     def _api_post(self, path, body, content_type="application/json", accept="application/json"):
         token = self._load_token()
@@ -166,8 +192,9 @@ class OneNoteAPI:
             req.add_header("Authorization", f"Bearer {token}")
             req.add_header("Content-Type", content_type)
             req.add_header("Accept", accept)
+            req.add_header("User-Agent", "dotfiles-public-onenote-cli/1.0")
             try:
-                resp = urllib.request.urlopen(req)
+                resp = urllib.request.urlopen(req, timeout=HTTP_TIMEOUT)
                 if accept == "application/json":
                     return json.loads(resp.read())
                 return resp.read().decode("utf-8", errors="replace")
@@ -177,6 +204,8 @@ class OneNoteAPI:
                     continue
                 body_text = e.read().decode("utf-8", errors="replace")
                 raise RuntimeError(f"API error {e.code}: {body_text}")
+            except urllib.error.URLError as e:
+                raise RuntimeError(f"Network error: {e.reason}") from e
 
     def _api_patch(self, path, body, content_type="application/json", accept="application/json"):
         token = self._load_token()
@@ -186,8 +215,9 @@ class OneNoteAPI:
             req.add_header("Authorization", f"Bearer {token}")
             req.add_header("Content-Type", content_type)
             req.add_header("Accept", accept)
+            req.add_header("User-Agent", "dotfiles-public-onenote-cli/1.0")
             try:
-                resp = urllib.request.urlopen(req)
+                resp = urllib.request.urlopen(req, timeout=HTTP_TIMEOUT)
                 if accept == "application/json":
                     payload = resp.read()
                     return json.loads(payload) if payload else None
@@ -198,24 +228,53 @@ class OneNoteAPI:
                     continue
                 body_text = e.read().decode("utf-8", errors="replace")
                 raise RuntimeError(f"API error {e.code}: {body_text}")
+            except urllib.error.URLError as e:
+                raise RuntimeError(f"Network error: {e.reason}") from e
+
+    def _api_get_all(self, path, params=None, limit=None):
+        """Return all collection rows while following Graph pagination."""
+        data = self._api_get(path, params)
+        values = list(data.get("value", []))
+        next_link = data.get("@odata.nextLink")
+        while next_link and (limit is None or len(values) < limit):
+            token = self._load_token()
+            for attempt in range(2):
+                req = urllib.request.Request(next_link)
+                req.add_header("Authorization", f"Bearer {token}")
+                req.add_header("Accept", "application/json")
+                req.add_header("User-Agent", "dotfiles-public-onenote-cli/1.0")
+                try:
+                    with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+                        data = json.loads(resp.read())
+                    break
+                except urllib.error.HTTPError as exc:
+                    if exc.code == 401 and attempt == 0:
+                        token = self._refresh_token()
+                        continue
+                    body = exc.read().decode("utf-8", errors="replace")
+                    raise RuntimeError(f"API error {exc.code}: {body}") from exc
+                except urllib.error.URLError as exc:
+                    raise RuntimeError(f"Network error: {exc.reason}") from exc
+            values.extend(data.get("value", []))
+            next_link = data.get("@odata.nextLink")
+        return values[:limit] if limit is not None else values
 
     def list_notebooks(self):
-        data = self._api_get("notebooks", {"$select": "id,displayName"})
-        return data.get("value", [])
+        return self._api_get_all("notebooks", {"$select": "id,displayName"})
 
     def list_sections(self, notebook_id):
         nid = encode_id(notebook_id)
-        data = self._api_get(f"notebooks/{nid}/sections", {"$select": "id,displayName"})
-        return data.get("value", [])
+        return self._api_get_all(
+            f"notebooks/{nid}/sections", {"$select": "id,displayName"}
+        )
 
     def list_pages(self, section_id, top=20):
         sid = encode_id(section_id)
-        data = self._api_get(f"sections/{sid}/pages", {
+        return self._api_get_all(f"sections/{sid}/pages", {
             "$select": "id,title,createdDateTime,lastModifiedDateTime",
             "$orderby": "createdDateTime desc",
             "$top": str(top),
-        })
-        return data.get("value", [])
+        }, limit=top)
 
     def get_page_content(self, page_id):
         pid = encode_id(page_id)
@@ -247,8 +306,9 @@ class OneNoteAPI:
         for attempt in range(2):
             req = urllib.request.Request(url, method="DELETE")
             req.add_header("Authorization", f"Bearer {token}")
+            req.add_header("User-Agent", "dotfiles-public-onenote-cli/1.0")
             try:
-                resp = urllib.request.urlopen(req)
+                resp = urllib.request.urlopen(req, timeout=HTTP_TIMEOUT)
                 return
             except urllib.error.HTTPError as e:
                 if e.code == 401 and attempt == 0:
@@ -258,11 +318,15 @@ class OneNoteAPI:
                     return
                 body_text = e.read().decode("utf-8", errors="replace")
                 raise RuntimeError(f"API error {e.code}: {body_text}")
+            except urllib.error.URLError as e:
+                raise RuntimeError(f"Network error: {e.reason}") from e
 
     def get_page_html(self, page_id):
         """Get raw HTML content of a page."""
         pid = encode_id(page_id)
-        return self._api_get(f"pages/{pid}/content", accept="text/html")
+        return self._api_get(
+            f"pages/{pid}/content", {"includeIDs": "true"}, accept="text/html"
+        )
 
     def patch_page(self, page_id, commands):
         """Send PATCH commands to a page.
@@ -307,10 +371,16 @@ class OneNoteAPI:
         # Might be a raw ID
         if "-" in name and "!" in name:
             return name
-        # Search by displayName
-        for nb in self.list_notebooks():
-            if low in nb.get("displayName", "").lower():
-                return nb["id"]
+        notebooks = self.list_notebooks()
+        exact = [nb for nb in notebooks if low == nb.get("displayName", "").lower()]
+        if len(exact) == 1:
+            return exact[0]["id"]
+        partial = [nb for nb in notebooks if low in nb.get("displayName", "").lower()]
+        if len(partial) == 1:
+            return partial[0]["id"]
+        if len(partial) > 1:
+            names = ", ".join(nb.get("displayName", "?") for nb in partial)
+            raise RuntimeError(f"Ambiguous notebook '{name}': {names}")
         raise RuntimeError(f"Notebook not found: {name}")
 
     def resolve_section(self, name, notebook_id=None):
@@ -320,20 +390,107 @@ class OneNoteAPI:
         if "-" in name and "!" in name:
             return name
         if notebook_id:
-            for sec in self.list_sections(notebook_id):
-                if name.lower() in sec.get("displayName", "").lower():
-                    return sec["id"]
+            sections = self.list_sections(notebook_id)
         else:
-            # Search all notebooks
+            sections = []
             for nb in self.list_notebooks():
-                for sec in self.list_sections(nb["id"]):
-                    if name.lower() in sec.get("displayName", "").lower():
-                        return sec["id"]
+                sections.extend(self.list_sections(nb["id"]))
+        low = name.lower()
+        exact = [sec for sec in sections if low == sec.get("displayName", "").lower()]
+        if len(exact) == 1:
+            return exact[0]["id"]
+        partial = [sec for sec in sections if low in sec.get("displayName", "").lower()]
+        if len(partial) == 1:
+            return partial[0]["id"]
+        if len(partial) > 1:
+            names = ", ".join(sec.get("displayName", "?") for sec in partial)
+            raise RuntimeError(f"Ambiguous section '{name}': {names}")
         raise RuntimeError(f"Section not found: {name}")
 
 
+def _save_auth_response(response):
+    if "access_token" not in response:
+        raise RuntimeError(f"Authentication did not return an access token: {response}")
+    token_data = {
+        "token": response["access_token"],
+        "clientId": CLIENT_ID,
+        "scopes": response.get("scope", SCOPES).split(),
+        "refresh_token": response.get("refresh_token", ""),
+        "expires_in": response.get("expires_in"),
+    }
+    OneNoteAPI()._save_token(token_data)
+
+
 def cmd_auth():
-    """Interactive device code authentication flow."""
+    """Authorization code flow with PKCE for personal or organizational accounts."""
+    if not CLIENT_ID:
+        raise RuntimeError("client_id not configured. Set it in ~/.config/agent-tools/config.json")
+    result = {}
+
+    class CallbackHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            result["code"] = query.get("code", [None])[0]
+            result["error"] = query.get("error_description", query.get("error", [None]))[0]
+            message = "OneNote CLI authentication received. You can close this tab."
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(message.encode("utf-8"))
+
+        def log_message(self, *_):
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), CallbackHandler)
+    server.timeout = 300
+    redirect_uri = f"http://localhost:{server.server_port}"
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode("ascii")).digest()
+    ).rstrip(b"=").decode("ascii")
+    auth_url = f"{LOGIN_BASE}/authorize?" + urllib.parse.urlencode({
+        "client_id": CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": redirect_uri,
+        "response_mode": "query",
+        "scope": SCOPES,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    })
+    print(f"Open this URL in a browser on this computer:\n{auth_url}")
+    webbrowser.open(auth_url)
+    print("Waiting up to 5 minutes for the browser callback...")
+    server.handle_request()
+    server.server_close()
+    if result.get("error"):
+        raise RuntimeError(f"Authentication failed: {result['error']}")
+    if not result.get("code"):
+        raise RuntimeError("Authentication timed out or returned no authorization code")
+
+    params = urllib.parse.urlencode({
+        "client_id": CLIENT_ID,
+        "grant_type": "authorization_code",
+        "code": result["code"],
+        "redirect_uri": redirect_uri,
+        "scope": SCOPES,
+        "code_verifier": verifier,
+    }).encode()
+    request = urllib.request.Request(f"{LOGIN_BASE}/token", data=params)
+    try:
+        response = json.loads(
+            urllib.request.urlopen(request, timeout=HTTP_TIMEOUT).read()
+        )
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Token exchange failed ({exc.code}): {body}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Token exchange network error: {exc.reason}") from exc
+    _save_auth_response(response)
+    print("Authentication successful. Token saved.")
+
+
+def cmd_auth_device():
+    """Device code authentication flow for supported organizational tenants."""
     if not CLIENT_ID:
         raise RuntimeError("client_id not configured. Set it in ~/.config/agent-tools/config.json")
     params = urllib.parse.urlencode({
@@ -341,7 +498,13 @@ def cmd_auth():
         "scope": SCOPES,
     }).encode()
     req = urllib.request.Request(f"{LOGIN_BASE}/devicecode", data=params)
-    resp = json.loads(urllib.request.urlopen(req).read())
+    try:
+        resp = json.loads(urllib.request.urlopen(req, timeout=HTTP_TIMEOUT).read())
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Auth failed ({exc.code}): {body}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Auth network error: {exc.reason}") from exc
 
     print(f"Open: {resp['verification_uri']}")
     print(f"Code: {resp['user_code']}")
@@ -359,7 +522,9 @@ def cmd_auth():
         }).encode()
         poll_req = urllib.request.Request(f"{LOGIN_BASE}/token", data=poll_params)
         try:
-            poll_resp = json.loads(urllib.request.urlopen(poll_req).read())
+            poll_resp = json.loads(
+                urllib.request.urlopen(poll_req, timeout=HTTP_TIMEOUT).read()
+            )
         except urllib.error.HTTPError as e:
             err = json.loads(e.read())
             if err.get("error") == "authorization_pending":
@@ -370,16 +535,38 @@ def cmd_auth():
             raise RuntimeError(f"Auth failed: {err}")
 
         if "access_token" in poll_resp:
-            token_data = {
-                "token": poll_resp["access_token"],
-                "clientId": CLIENT_ID,
-                "scopes": SCOPES.split(),
-                "refresh_token": poll_resp.get("refresh_token", ""),
-            }
-            api = OneNoteAPI()
-            api._save_token(token_data)
+            _save_auth_response(poll_resp)
             print("Authentication successful. Token saved.")
             return
+
+
+def cmd_doctor():
+    """Validate local configuration without calling Microsoft Graph."""
+    checks = []
+    config_ok = os.path.isfile(CONFIG_FILE)
+    checks.append((config_ok, "config", CONFIG_FILE if config_ok else f"not found: {CONFIG_FILE}"))
+    client_ok = bool(CLIENT_ID and CLIENT_ID != "YOUR_CLIENT_ID")
+    checks.append((client_ok, "client_id", "configured" if client_ok else "not configured"))
+    token_ok = os.path.isfile(TOKEN_FILE)
+    checks.append((token_ok, "token", TOKEN_FILE if token_ok else f"not found: {TOKEN_FILE}"))
+    if token_ok:
+        try:
+            with open(TOKEN_FILE, encoding="utf-8") as handle:
+                token_data = json.load(handle)
+            access_ok = bool(token_data.get("token") or token_data.get("access_token"))
+            refresh_ok = bool(token_data.get("refresh_token"))
+            checks.append((access_ok, "access token", "present" if access_ok else "missing"))
+            checks.append((refresh_ok, "refresh token", "present" if refresh_ok else "missing"))
+            mode = stat.S_IMODE(os.stat(TOKEN_FILE).st_mode)
+            checks.append((not mode & 0o077, "token permissions", f"{mode:04o}"))
+        except (OSError, json.JSONDecodeError) as exc:
+            checks.append((False, "token JSON", str(exc)))
+    checks.append((True, "tenant", TENANT))
+    checks.append((True, "scopes", SCOPES))
+    for ok, name, detail in checks:
+        print(f"{'OK' if ok else 'NG'} {name}: {detail}")
+    if not all(ok for ok, _, _ in checks):
+        raise RuntimeError("OneNote setup is incomplete")
 
 
 def cmd_notebooks(api):
@@ -488,7 +675,9 @@ def cmd_insert(api, page_id, target, text, position="after", is_html=False):
     print(f"Inserted {position} {target} in page: {page_id}")
 
 
-def cmd_delete_page(api, page_id):
+def cmd_delete_page(api, page_id, confirmed=False):
+    if not confirmed:
+        raise RuntimeError("delete-page requires --yes")
     api.delete_page(page_id)
     print(f"Deleted page: {page_id}")
 
@@ -540,7 +729,9 @@ def usage():
     print("""Usage: onenote-cli.py <command> [args]
 
 Commands:
-  auth                              Device code authentication
+  doctor                            Validate config/token without API access
+  auth                              Browser authentication with localhost + PKCE
+  auth-device                       Device code flow (organizational tenants only)
   notebooks                         List notebooks
   sections <notebook>               List sections (name or ID)
   pages <section> [--notebook NB]   List pages (name or ID)
@@ -557,7 +748,7 @@ Commands:
                                     Replace element content (target: #data-id)
   insert <page_id> <target> <text|-> [--position before|after] [--html]
                                     Insert before/after element (default: after)
-  delete-page <page_id>             Delete a page
+  delete-page <page_id> --yes       Delete a page (explicit confirmation)
   patch <page_id> <json|->          Send raw PATCH commands as JSON
 
   Legacy:
@@ -574,14 +765,22 @@ Environment:
     sys.exit(1)
 
 
-def main():
+def _main():
     if len(sys.argv) < 2:
         usage()
 
     cmd = sys.argv[1]
 
+    if cmd == "doctor":
+        cmd_doctor()
+        return
+
     if cmd == "auth":
         cmd_auth()
+        return
+
+    if cmd == "auth-device":
+        cmd_auth_device()
         return
 
     api = OneNoteAPI()
@@ -640,7 +839,8 @@ def main():
     elif cmd == "delete-page":
         if len(sys.argv) < 3:
             usage()
-        cmd_delete_page(api, sys.argv[2])
+        opts, pos = _parse_opts(sys.argv[3:], {"yes": True})
+        cmd_delete_page(api, sys.argv[2], confirmed="yes" in opts)
     elif cmd == "patch":
         if len(sys.argv) < 3:
             usage()
@@ -655,5 +855,14 @@ def main():
         usage()
 
 
+def main():
+    try:
+        _main()
+    except (RuntimeError, ValueError, json.JSONDecodeError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
