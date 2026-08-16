@@ -1,0 +1,84 @@
+{
+  "services": [
+    {
+      "name": "keep",
+      "label": "Google Keep",
+      "group": "personal",
+      "start": "keep-start.sh",
+      "cli": "keep-cli.py",
+      "display": 1,
+      "vnc_port": 5901,
+      "cdp_port": 9221,
+      "novnc_port": 6081,
+      "profile": "~/.config/agent-tools/chrome-keep"
+    },
+    {
+      "name": "teams",
+      "label": "Microsoft Teams",
+      "group": "personal",
+      "start": "teams-start.sh",
+      "cli": "teams-cli.py",
+      "display": 2,
+      "vnc_port": 5902,
+      "cdp_port": 9222,
+      "novnc_port": 6082,
+      "profile": "~/.config/agent-tools/chrome-teams"
+    },
+    {
+      "name": "slack",
+      "label": "Slack",
+      "group": "personal",
+      "start": "slack-start.sh",
+      "cli": "slack-cli.py",
+      "display": 3,
+      "vnc_port": 5903,
+      "cdp_port": 9223,
+      "novnc_port": 6083,
+      "profile": "~/.config/agent-tools/chrome-slack"
+    },
+    {
+      "name": "moneyforward",
+      "label": "MoneyForward",
+      "group": "personal",
+      "display": 24,
+      "vnc_port": 5924,
+      "cdp_port": 9224,
+      "novnc_port": 6084,
+      "profile": "~/.config/agent-tools/chrome-moneyforward",
+      "external": true
+    },
+    {
+      "name": "notion",
+      "label": "Notion",
+      "group": "personal",
+      "start": "notion-start.sh",
+      "cli": "notion-browser-cli.py",
+      "display": 5,
+      "vnc_port": 5905,
+      "cdp_port": 9225,
+      "novnc_port": 6085,
+      "profile": "~/.config/agent-tools/chrome-notion"
+    },
+    {
+      "name": "entra",
+      "label": "Microsoft Entra",
+      "group": "personal",
+      "start": "entra-start.sh",
+      "display": 6,
+      "vnc_port": 5906,
+      "cdp_port": 9226,
+      "novnc_port": 6086,
+      "profile": "~/.config/agent-tools/chrome-entra"
+    },
+    {
+      "name": "concur",
+      "label": "Concur",
+      "group": "work",
+      "display": 11,
+      "vnc_port": 5911,
+      "cdp_port": 9231,
+      "novnc_port": 6091,
+      "external": true
+    }
+  ]
+}

@@ -23,6 +23,7 @@ cd ~/dotfiles_public
 | notion-browser-cli.py | Notion | `~/notion-browser-cli.py` | [notion-access.md](agents/notion-access.md) |
 | onenote-cli.py | OneNote | `~/onenote-cli.py` | [onenote-access.md](agents/onenote-access.md) |
 | teams-cli.py | Teams | `~/teams-cli.py` | [teams-access.md](agents/teams-access.md) |
+| agent-tools-doctor.py | 全基盤の診断 | `~/agent-tools-doctor.py` | [services.json](agents/services.json) |
 
 ## Codex MCP / Skill
 
@@ -93,15 +94,17 @@ python3 ~/keep-cli.py list
 
 #### OneNote (onenote-cli.py)
 
-1. Azure AD でアプリ登録（パブリッククライアント、リダイレクト URI 不要）
-2. API アクセス許可: `Notes.Read`, `Notes.ReadWrite`, `Notes.Create`, `User.Read`
+1. Microsoft Entraでアプリ登録（パブリッククライアント、リダイレクトURIは`http://localhost`）
+2. 委任APIアクセス許可: `Notes.ReadWrite`（CLIが閲覧・作成・更新・削除を扱うため）
 3. `~/.config/agent-tools/config.json` に Client ID を記述:
 
 ```json
 {
   "onenote": {
     "client_id": "<client_id>",
-    "token_file": "~/onenotemcp/.access-token.txt",
+    "tenant": "consumers",
+    "scopes": ["Notes.ReadWrite", "offline_access"],
+    "token_file": "~/.config/agent-tools/onenote-token.json",
     "notebooks": {},
     "sections": {}
   }
@@ -113,6 +116,8 @@ python3 ~/keep-cli.py list
 ```bash
 ~/onenote-cli.py auth
 ```
+
+既存設定のトークンパスはそのまま利用できる。新規設定では認証情報を`~/.config/agent-tools/`へ集約する。
 
 #### Notion (notion-browser-cli.py)
 
@@ -164,7 +169,7 @@ ssh -L 5902:localhost:5902 <host>   # リモートの場合
 vncviewer localhost:5902
 ```
 
-Teams は専用 Chrome プロファイル `/tmp/chrome-teams3`、CDP ポート `9224` を使う。
+Teams は専用 Chrome プロファイル `~/.config/agent-tools/chrome-teams`、CDPポート`9222`を使う。
 
 4. ログイン完了後、CLI で操作:
 
@@ -183,8 +188,21 @@ python3 ~/teams-cli.py chats
 | `~/.config/himalaya/config.toml` | himalaya の IMAP/SMTP 設定 |
 | `~/.local/share/gcalcli/oauth` | gcalcli の OAuth トークン |
 | `~/.config/agent-tools/keep-state.json` | Google Keep の同期状態・最終選択ノート |
-| `/tmp/chrome-teams3` | Teams 用 Chrome プロファイル |
+| `~/.config/agent-tools/chrome-teams` | Teams 用 Chrome プロファイル |
 | `~/.config/agent-tools/chrome-notion` | Notion 用 Chrome プロファイル |
+
+### 一括診断
+
+認証情報の内容を表示せず、コマンド、Python依存、設定JSON、権限、VNC/CDPの稼働状態を確認する。
+OneNoteについてはClient IDとtokenファイルの有無も確認するが、値そのものは表示しない。
+
+```bash
+~/agent-tools-doctor.py
+~/agent-tools-doctor.py --json
+~/agent-tools-doctor.py --strict
+```
+
+ブラウザ操作基盤のポート・プロファイル一覧は[agents/services.json](agents/services.json)を機械可読な正本とする。
 
 テンプレート: [agents/config.example.json](agents/config.example.json)
 
