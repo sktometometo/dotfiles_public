@@ -1007,6 +1007,113 @@ async def save_message_images(cdp, out_dir):
     return saved
 
 
+async def _collect_file_attachments(cdp):
+    """Collect SharePoint-backed file attachments visible in the current view.
+
+    Teams renders each file chiclet as a React node whose props carry an
+    `atpSharepointData` array (one entry per underlying file) with the
+    SharePoint `URL`. We read it off the fiber's `__reactProps$*` key rather
+    than the DOM, since the download/share URL is not present as a plain
+    href anywhere in the rendered markup. Returns a de-duplicated list of
+    {name, url} dicts in document order (covers both the main channel/chat
+    view and an open thread panel, since both share the same DOM).
+    """
+    js = r"""
+    (() => {
+        const seen = new Set();
+        const out = [];
+        for (const el of document.querySelectorAll('[aria-label]')) {
+            const propsKey = Object.keys(el).find(k => k.startsWith('__reactProps'));
+            if (!propsKey) continue;
+            const data = el[propsKey] && el[propsKey].atpSharepointData;
+            if (!Array.isArray(data)) continue;
+            for (const item of data) {
+                const url = item && item.URL;
+                if (!url || seen.has(url)) continue;
+                seen.add(url);
+                const name = decodeURIComponent(url.split('/').pop() || url);
+                out.push({name, url});
+            }
+        }
+        return out;
+    })();
+    """
+    return await cdp.evaluate(js)
+
+
+async def save_message_files(cdp, out_dir, name_filter=None):
+    """Download every SharePoint file attachment visible in the current view.
+
+    Triggers a real top-frame navigation to each file's SharePoint URL with
+    `?download=1` appended, after configuring CDP's Page.setDownloadBehavior
+    to save into out_dir. SharePoint responds with Content-Disposition:
+    attachment, so Chrome downloads the bytes without actually navigating
+    away (the in-page load is reported as aborted/isDownload=True and
+    location stays on Teams) — this sidesteps both fetch() CORS rejections
+    and the popup blocker that a script-initiated window.open() hits.
+
+    Args:
+        cdp: TeamsCDP instance.
+        out_dir: directory to save files into (created if missing).
+        name_filter: optional substring; only attachments whose name
+            contains it (case-insensitive) are downloaded.
+
+    Returns the list of saved absolute paths.
+    """
+    import os
+
+    out_dir = os.path.abspath(os.path.expanduser(out_dir))
+    os.makedirs(out_dir, exist_ok=True)
+
+    attachments = await _collect_file_attachments(cdp)
+    if name_filter:
+        needle = name_filter.lower()
+        attachments = [a for a in attachments if needle in a["name"].lower()]
+
+    if not attachments:
+        print("No file attachments found in the current view.")
+        return []
+
+    await cdp.cdp_call(
+        "Page.setDownloadBehavior",
+        {"behavior": "allow", "downloadPath": out_dir, "eventsEnabled": True},
+    )
+
+    saved = []
+    for att in attachments:
+        name, url = att["name"], att["url"]
+        dl_url = url + ("&download=1" if "?" in url else "?download=1")
+        out_path = os.path.join(out_dir, name)
+        before = os.path.exists(out_path)
+        try:
+            await cdp.cdp_call("Page.navigate", {"url": dl_url}, timeout=15)
+        except Exception as e:
+            print(f"[skip] {name}: {e}")
+            continue
+        # Give Chrome a moment to write the file; poll briefly since large
+        # logs can take a few seconds even though the navigation call itself
+        # returns as soon as the download starts.
+        for _ in range(20):
+            await asyncio.sleep(0.5)
+            if os.path.exists(out_path) and (before or os.path.getsize(out_path) > 0):
+                break
+        if os.path.exists(out_path):
+            saved.append(out_path)
+            print(f"{out_path}  ({os.path.getsize(out_path)} bytes)")
+        else:
+            print(f"[skip] {name}: download did not appear in {out_dir}")
+
+    # A top-frame navigate to a download URL can still leave Teams on a
+    # redirected/blank page if SharePoint round-trips through auth; restore
+    # the Teams view so subsequent commands (read/thread/etc.) work.
+    current_url = await cdp.evaluate("location.href")
+    if "teams.cloud.microsoft" not in current_url and "teams.microsoft.com" not in current_url:
+        await cdp.cdp_call("Page.navigate", {"url": "https://teams.cloud.microsoft/"})
+        await asyncio.sleep(4)
+
+    return saved
+
+
 async def main():
     if len(sys.argv) < 2:
         print("Usage: teams-cli.py <command> [args]")
@@ -1028,6 +1135,7 @@ async def main():
         print("  dump                     Dump full page text (debug)")
         print("  screenshot <path> [--full]   Save a PNG screenshot of the page")
         print("  images <dir>             Save all <img> tags from the current chat to <dir>")
+        print("  files <dir> [filter]     Download SharePoint file attachments from the current view to <dir>")
         print()
         print("The post command reads body from argument or stdin (if '-').")
         print()
@@ -1093,6 +1201,11 @@ async def main():
             out_dir = sys.argv[2]
             saved = await save_message_images(cdp, out_dir)
             print(f"\nSaved {len(saved)} image(s) to {out_dir}")
+        elif cmd == "files" and len(sys.argv) >= 3:
+            out_dir = sys.argv[2]
+            name_filter = sys.argv[3] if len(sys.argv) >= 4 else None
+            saved = await save_message_files(cdp, out_dir, name_filter=name_filter)
+            print(f"\nSaved {len(saved)} file(s) to {out_dir}")
         else:
             print(f"Unknown command: {cmd}")
     finally:
