@@ -32,7 +32,7 @@ class TeamsCDP(ChromeCDP):
     def __init__(self):
         super().__init__(
             CDP_URL,
-            lambda page: "teams" in page.get("url", "") or "teams" in page.get("title", "").lower(),
+            lambda page: any(h in page.get("url", "") for h in ("teams.cloud.microsoft", "teams.microsoft.com")),
         )
 
 
@@ -682,6 +682,30 @@ async def read_thread(cdp, query):
                 threadButton.click();
                 return 'clicked_reply_link';
             }}
+            // Chat (1:1 / group) reply summaries use a dedicated class instead of
+            // being wrapped in a treeitem/thread container. closest('[class*="fui-ChatMessage"]')
+            // matches the innermost wrapper (e.g. fui-ChatMessageGridGroup) which only
+            // contains the summary button itself, not the original message body, so
+            // walk up until the ancestor's text is meaningfully longer than the summary.
+            const summaryEls = document.querySelectorAll('.fui-ChatMessage__repliesSummary, [class*="repliesSummary"]');
+            let summaryButton = null;
+            let summaryButtonLen = Infinity;
+            for (const el of summaryEls) {{
+                let bubble = el.parentElement;
+                for (let i = 0; i < 10 && bubble; i++) {{
+                    if (bubble.textContent.length > el.textContent.length + 20) break;
+                    bubble = bubble.parentElement;
+                }}
+                const text = bubble ? bubble.textContent : '';
+                if (text && text.includes(target) && text.length < summaryButtonLen) {{
+                    summaryButton = el;
+                    summaryButtonLen = text.length;
+                }}
+            }}
+            if (summaryButton) {{
+                summaryButton.click();
+                return 'clicked_reply_summary';
+            }}
             // Fallback: click on the thread post itself
             const items = document.querySelectorAll('[role="treeitem"], [role="listitem"], [role="link"], a, button');
             let best = null;
@@ -742,10 +766,352 @@ async def read_thread(cdp, query):
         print(result)
 
 
+async def _install_copy_link_hook(cdp):
+    """Install hooks so Teams' "Copy link" target is captured into window.__copiedLink.
+
+    Teams writes the deep link through navigator.clipboard.writeText (and in some
+    paths via execCommand('copy') on a hidden element). We intercept both and keep
+    only values that look like a Teams message/channel deep link. This avoids the
+    clipboard read permission / focus requirement entirely.
+    """
+    await cdp.evaluate(
+        """
+        (() => {
+            window.__copiedLink = null;
+            const take = (t) => {
+                if (typeof t === 'string' && /\\/l\\/(message|channel)\\//i.test(t)) {
+                    window.__copiedLink = t;
+                }
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText && !navigator.clipboard.__hooked) {
+                const o = navigator.clipboard.writeText.bind(navigator.clipboard);
+                navigator.clipboard.writeText = function (t) { take(t); return o(t); };
+                navigator.clipboard.__hooked = true;
+            }
+            if (!document.__copyHooked) {
+                const oe = document.execCommand.bind(document);
+                document.execCommand = function (c, ...a) {
+                    if (String(c).toLowerCase() === 'copy') {
+                        const ae = document.activeElement;
+                        take(ae && (ae.value || ae.textContent) || '');
+                    }
+                    return oe(c, ...a);
+                };
+                document.__copyHooked = true;
+            }
+            return 'hooked';
+        })()
+        """
+    )
+
+
+async def copy_message_link(cdp, query):
+    """Find a message by matching text, trigger Teams' "Copy link", print the deep link.
+
+    Works on the currently open chat/channel. The query is matched against message
+    text (shortest containing match wins, mirroring click_chat). The message's
+    overflow menu is opened and "リンクのコピー" / "Copy link" is clicked; the URL is
+    captured via the writeText/execCommand hook rather than reading the clipboard.
+    """
+    await _install_copy_link_hook(cdp)
+    safe_query = query.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+
+    # Locate the target message element (closest [data-mid] ancestor of the match),
+    # scroll it into view, hover to reveal the toolbar, and open the overflow menu.
+    open_result = await cdp.evaluate(f"""
+        (() => {{
+            const target = '{safe_query}';
+            let best = null, bestLen = Infinity;
+            for (const el of document.querySelectorAll('[data-mid]')) {{
+                const t = el.textContent || '';
+                if (t.includes(target) && t.length < bestLen) {{ best = el; bestLen = t.length; }}
+            }}
+            if (!best) return 'not_found';
+            best.scrollIntoView({{block: 'center'}});
+            const r = best.getBoundingClientRect();
+            for (const type of ['mouseover', 'mouseenter', 'mousemove']) {{
+                best.dispatchEvent(new MouseEvent(type, {{bubbles: true, clientX: r.x + 50, clientY: r.y + 10}}));
+            }}
+            const more = [...best.querySelectorAll('button,[role="button"]')]
+                    .find(b => /その他のオプション|more options|more actions/i.test(b.getAttribute('aria-label') || ''))
+                || [...document.querySelectorAll('button,[role="button"]')]
+                    .find(b => /その他のオプション|more options|more actions/i.test(b.getAttribute('aria-label') || ''));
+            if (!more) return 'no_menu_button';
+            more.click();
+            return 'menu_opened:' + best.getAttribute('data-mid');
+        }})()
+    """)
+    if open_result == "not_found":
+        print(f"Message not found: {query}", file=sys.stderr)
+        return None
+    if open_result == "no_menu_button":
+        print("Could not open the message overflow menu (hover/toolbar failed).", file=sys.stderr)
+        return None
+
+    await asyncio.sleep(2)
+
+    # Click the "Copy link" menu item.
+    click_result = await cdp.evaluate("""
+        (() => {
+            const it = [...document.querySelectorAll('[role="menuitem"],button,[role="button"]')]
+                .find(e => /^リンクのコピー$|^copy link$/i.test((e.innerText || e.textContent || '').trim()));
+            if (!it) return 'no_item';
+            it.click();
+            return 'clicked';
+        })()
+    """)
+    if click_result == "no_item":
+        print("'リンクのコピー' menu item not found for this message.", file=sys.stderr)
+        return None
+
+    # Poll the hook for the captured URL.
+    for _ in range(10):
+        await asyncio.sleep(0.5)
+        url = await cdp.evaluate("window.__copiedLink")
+        if url:
+            # Normalize host to teams.microsoft.com for portability of the deep link.
+            url = url.replace("https://teams.cloud.microsoft/", "https://teams.microsoft.com/")
+            print(url)
+            return url
+    print("Copy succeeded but no deep link was captured.", file=sys.stderr)
+    return None
+
+
 async def get_page_text(cdp):
     """Dump the full page text (debug)."""
     result = await cdp.evaluate("document.body.innerText.substring(0, 10000)")
     print(result)
+
+
+async def take_screenshot(cdp, out_path, *, full_page=False, format_="png"):
+    """Capture a screenshot of the current Teams page.
+
+    Uses the CDP `Page.captureScreenshot` method (Chrome DevTools Protocol).
+    Returns the absolute path that was written.
+
+    Parameters
+    ----------
+    out_path  : str, output file path (.png / .jpg)
+    full_page : bool, capture beyond the viewport when True
+    format_   : "png" | "jpeg"
+    """
+    import base64
+    import os
+
+    params = {"format": format_, "captureBeyondViewport": bool(full_page)}
+    if format_ == "jpeg":
+        params["quality"] = 85
+    resp = await cdp.cdp_call("Page.captureScreenshot", params, timeout=30)
+    b64 = resp.get("result", {}).get("data", "")
+    if not b64:
+        raise RuntimeError("Page.captureScreenshot returned no data")
+    out_path = os.path.abspath(os.path.expanduser(out_path))
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    with open(out_path, "wb") as f:
+        f.write(base64.b64decode(b64))
+    return out_path
+
+
+async def save_message_images(cdp, out_dir):
+    """Save every <img> inside the currently open chat/channel feed.
+
+    Iterates over <img> tags inside the message list and downloads each one
+    via fetch() inside the page context (so it inherits the Teams auth
+    cookies), then writes the raw bytes to disk. Returns the list of saved
+    paths.
+
+    Out filenames are zero-padded indexes plus the URL's basename or a
+    sha1 prefix for unique-but-stable names.
+    """
+    import base64
+    import hashlib
+    import os
+    import urllib.parse
+
+    out_dir = os.path.abspath(os.path.expanduser(out_dir))
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Collect candidate <img> URLs from the currently rendered message list.
+    # We target the message feed (data-tid="message-pane-list-viewport") to
+    # avoid grabbing chat-list avatars and other chrome.
+    js = r"""
+    (() => {
+        const root = document.querySelector('[data-tid="message-pane-list-viewport"]')
+                  || document.querySelector('[role="list"]')
+                  || document.body;
+        const imgs = Array.from(root.querySelectorAll('img'));
+        const urls = [];
+        for (const im of imgs) {
+            const src = im.currentSrc || im.src || '';
+            if (!src) continue;
+            // Skip tiny avatar / emoji images. Teams renders Skype emojis at
+            // ~20px and member avatars at <=32px; user-attached images are
+            // typically far larger.
+            const w = im.naturalWidth || im.width || 0;
+            const h = im.naturalHeight || im.height || 0;
+            if (w && w < 80) continue;
+            if (h && h < 80) continue;
+            // Skip data: SVG placeholders and emoji sprites.
+            if (src.startsWith('data:image/svg')) continue;
+            urls.push(src);
+        }
+        return Array.from(new Set(urls));
+    })();
+    """
+    urls = await cdp.evaluate(js)
+    if not urls:
+        print("No images found in the current message view.")
+        return []
+
+    saved = []
+    for idx, url in enumerate(urls):
+        # Fetch the image inside the page context so the Teams auth cookies
+        # / headers are sent automatically. Return as base64.
+        fetch_js = (
+            "(async () => {"
+            f"const r = await fetch({json.dumps(url)}, {{credentials: 'include'}});"
+            "if (!r.ok) return null;"
+            "const b = await r.blob();"
+            "const buf = await b.arrayBuffer();"
+            "const bytes = new Uint8Array(buf);"
+            "let bin = '';"
+            "for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);"
+            "return {ct: b.type, b64: btoa(bin)};"
+            "})()"
+        )
+        try:
+            result = await cdp.evaluate(fetch_js, timeout=30)
+        except Exception as e:
+            print(f"[skip] {url[:80]}: {e}")
+            continue
+        if not result or not result.get("b64"):
+            print(f"[skip] {url[:80]}: fetch failed")
+            continue
+
+        # Derive an output filename: prefer the URL's basename, fall back to
+        # a sha1 prefix so distinct URLs don't collide.
+        parsed = urllib.parse.urlparse(url)
+        base = os.path.basename(parsed.path)
+        if not base or "." not in base:
+            # Use sha1 prefix + extension from MIME (image/png -> .png).
+            digest = hashlib.sha1(url.encode()).hexdigest()[:10]
+            ct = result.get("ct", "image/png")
+            ext = "." + ct.split("/")[-1].split(";")[0]
+            base = f"{digest}{ext}"
+        out_path = os.path.join(out_dir, f"{idx:02d}_{base}")
+        with open(out_path, "wb") as f:
+            f.write(base64.b64decode(result["b64"]))
+        saved.append(out_path)
+        print(f"[{idx:02d}] {out_path}  ({result.get('ct', '?')})")
+
+    return saved
+
+
+async def _collect_file_attachments(cdp):
+    """Collect SharePoint-backed file attachments visible in the current view.
+
+    Teams renders each file chiclet as a React node whose props carry an
+    `atpSharepointData` array (one entry per underlying file) with the
+    SharePoint `URL`. We read it off the fiber's `__reactProps$*` key rather
+    than the DOM, since the download/share URL is not present as a plain
+    href anywhere in the rendered markup. Returns a de-duplicated list of
+    {name, url} dicts in document order (covers both the main channel/chat
+    view and an open thread panel, since both share the same DOM).
+    """
+    js = r"""
+    (() => {
+        const seen = new Set();
+        const out = [];
+        for (const el of document.querySelectorAll('[aria-label]')) {
+            const propsKey = Object.keys(el).find(k => k.startsWith('__reactProps'));
+            if (!propsKey) continue;
+            const data = el[propsKey] && el[propsKey].atpSharepointData;
+            if (!Array.isArray(data)) continue;
+            for (const item of data) {
+                const url = item && item.URL;
+                if (!url || seen.has(url)) continue;
+                seen.add(url);
+                const name = decodeURIComponent(url.split('/').pop() || url);
+                out.push({name, url});
+            }
+        }
+        return out;
+    })();
+    """
+    return await cdp.evaluate(js)
+
+
+async def save_message_files(cdp, out_dir, name_filter=None):
+    """Download every SharePoint file attachment visible in the current view.
+
+    Triggers a real top-frame navigation to each file's SharePoint URL with
+    `?download=1` appended, after configuring CDP's Page.setDownloadBehavior
+    to save into out_dir. SharePoint responds with Content-Disposition:
+    attachment, so Chrome downloads the bytes without actually navigating
+    away (the in-page load is reported as aborted/isDownload=True and
+    location stays on Teams) — this sidesteps both fetch() CORS rejections
+    and the popup blocker that a script-initiated window.open() hits.
+
+    Args:
+        cdp: TeamsCDP instance.
+        out_dir: directory to save files into (created if missing).
+        name_filter: optional substring; only attachments whose name
+            contains it (case-insensitive) are downloaded.
+
+    Returns the list of saved absolute paths.
+    """
+    import os
+
+    out_dir = os.path.abspath(os.path.expanduser(out_dir))
+    os.makedirs(out_dir, exist_ok=True)
+
+    attachments = await _collect_file_attachments(cdp)
+    if name_filter:
+        needle = name_filter.lower()
+        attachments = [a for a in attachments if needle in a["name"].lower()]
+
+    if not attachments:
+        print("No file attachments found in the current view.")
+        return []
+
+    await cdp.cdp_call(
+        "Page.setDownloadBehavior",
+        {"behavior": "allow", "downloadPath": out_dir, "eventsEnabled": True},
+    )
+
+    saved = []
+    for att in attachments:
+        name, url = att["name"], att["url"]
+        dl_url = url + ("&download=1" if "?" in url else "?download=1")
+        out_path = os.path.join(out_dir, name)
+        before = os.path.exists(out_path)
+        try:
+            await cdp.cdp_call("Page.navigate", {"url": dl_url}, timeout=15)
+        except Exception as e:
+            print(f"[skip] {name}: {e}")
+            continue
+        # Give Chrome a moment to write the file; poll briefly since large
+        # logs can take a few seconds even though the navigation call itself
+        # returns as soon as the download starts.
+        for _ in range(20):
+            await asyncio.sleep(0.5)
+            if os.path.exists(out_path) and (before or os.path.getsize(out_path) > 0):
+                break
+        if os.path.exists(out_path):
+            saved.append(out_path)
+            print(f"{out_path}  ({os.path.getsize(out_path)} bytes)")
+        else:
+            print(f"[skip] {name}: download did not appear in {out_dir}")
+
+    # A top-frame navigate to a download URL can still leave Teams on a
+    # redirected/blank page if SharePoint round-trips through auth; restore
+    # the Teams view so subsequent commands (read/thread/etc.) work.
+    current_url = await cdp.evaluate("location.href")
+    if "teams.cloud.microsoft" not in current_url and "teams.microsoft.com" not in current_url:
+        await cdp.cdp_call("Page.navigate", {"url": "https://teams.cloud.microsoft/"})
+        await asyncio.sleep(4)
+
+    return saved
 
 
 async def main():
@@ -763,9 +1129,13 @@ async def main():
         print("  post <body>              Post a message to the current channel")
         print("  post -s <subject> <body> Post with a subject line")
         print("  thread <query>           Open a thread by matching text and read replies")
+        print("  link <query>             Copy the Teams deep link of a matching message")
         print("  goto <url>               Navigate to a Teams URL and read it")
         print("  reload                   Reload the current page")
         print("  dump                     Dump full page text (debug)")
+        print("  screenshot <path> [--full]   Save a PNG screenshot of the page")
+        print("  images <dir>             Save all <img> tags from the current chat to <dir>")
+        print("  files <dir> [filter]     Download SharePoint file attachments from the current view to <dir>")
         print()
         print("The post command reads body from argument or stdin (if '-').")
         print()
@@ -822,6 +1192,20 @@ async def main():
             print("Page reloaded")
         elif cmd == "dump":
             await get_page_text(cdp)
+        elif cmd == "screenshot" and len(sys.argv) >= 3:
+            out_path = sys.argv[2]
+            full_page = "--full" in sys.argv[3:]
+            saved = await take_screenshot(cdp, out_path, full_page=full_page)
+            print(f"Saved: {saved}")
+        elif cmd == "images" and len(sys.argv) >= 3:
+            out_dir = sys.argv[2]
+            saved = await save_message_images(cdp, out_dir)
+            print(f"\nSaved {len(saved)} image(s) to {out_dir}")
+        elif cmd == "files" and len(sys.argv) >= 3:
+            out_dir = sys.argv[2]
+            name_filter = sys.argv[3] if len(sys.argv) >= 4 else None
+            saved = await save_message_files(cdp, out_dir, name_filter=name_filter)
+            print(f"\nSaved {len(saved)} file(s) to {out_dir}")
         else:
             print(f"Unknown command: {cmd}")
     finally:

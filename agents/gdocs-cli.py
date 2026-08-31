@@ -11,7 +11,7 @@ TOKEN_FILE = os.path.expanduser("~/.config/agent-tools/gdocs-token.json")
 SCOPES = [
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/presentations.readonly",
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/gmail.settings.basic",
@@ -67,7 +67,11 @@ def get_credentials():
             )
             print()
             creds = flow.run_local_server(
-                port=AUTH_PORT, open_browser=False, timeout_seconds=120
+                port=AUTH_PORT,
+                open_browser=False,
+                timeout_seconds=120,
+                access_type="offline",
+                prompt="consent",
             )
 
         os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
@@ -345,6 +349,8 @@ def cmd_sheets_read(spreadsheet_id, args):
     if range_notation is None:
         target_sheet = sheet_name or (sheet_names[0] if sheet_names else "Sheet1")
         range_notation = target_sheet
+    elif sheet_name and "!" not in range_notation:
+        range_notation = f"'{sheet_name}'!{range_notation}"
 
     result = (
         sheets.spreadsheets()
@@ -361,6 +367,134 @@ def cmd_sheets_read(spreadsheet_id, args):
         print("\t".join(str(c) for c in row))
     if not values:
         print("  (empty)")
+
+
+def cmd_sheets_append(spreadsheet_id, args):
+    """Append rows to a spreadsheet.
+
+    --sheet <name>     Required. Sheet tab name to append to.
+    --json-file <p>    JSON file: array of arrays (each inner array = one row of cells).
+    --tsv-file <p>     TSV file: each line one row, tabs separate cells.
+                       Multi-line cell content is not supported in TSV mode; use JSON.
+    --raw              Use valueInputOption=RAW (default: USER_ENTERED).
+    --json             Print API response as JSON.
+    """
+    sheet_name = None
+    json_file = None
+    tsv_file = None
+    value_input_option = "USER_ENTERED"
+    for i, a in enumerate(args):
+        if a == "--sheet" and i + 1 < len(args):
+            sheet_name = args[i + 1]
+        elif a == "--json-file" and i + 1 < len(args):
+            json_file = args[i + 1]
+        elif a == "--tsv-file" and i + 1 < len(args):
+            tsv_file = args[i + 1]
+        elif a == "--raw":
+            value_input_option = "RAW"
+
+    if not sheet_name:
+        print("ERROR: --sheet <name> is required", file=sys.stderr)
+        sys.exit(2)
+    if not json_file and not tsv_file:
+        print("ERROR: one of --json-file or --tsv-file is required", file=sys.stderr)
+        sys.exit(2)
+
+    if json_file:
+        with open(json_file) as f:
+            rows = json.load(f)
+        if not isinstance(rows, list) or any(not isinstance(r, list) for r in rows):
+            print("ERROR: JSON must be an array of arrays", file=sys.stderr)
+            sys.exit(2)
+    else:
+        rows = []
+        with open(tsv_file) as f:
+            for line in f:
+                line = line.rstrip("\n").rstrip("\r")
+                rows.append(line.split("\t"))
+
+    sheets = get_sheets_service()
+    body = {"values": rows}
+    result = (
+        sheets.spreadsheets()
+        .values()
+        .append(
+            spreadsheetId=spreadsheet_id,
+            range=f"'{sheet_name}'",
+            valueInputOption=value_input_option,
+            insertDataOption="INSERT_ROWS",
+            body=body,
+        )
+        .execute()
+    )
+
+    if "--json" in args:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    updates = result.get("updates", {})
+    print(f"Appended {len(rows)} row(s) to '{sheet_name}'.")
+    print(f"  updatedRange: {updates.get('updatedRange')}")
+    print(f"  updatedRows: {updates.get('updatedRows')}")
+    print(f"  updatedCells: {updates.get('updatedCells')}")
+
+
+def cmd_sheets_update(spreadsheet_id, args):
+    """Update specific cells in a spreadsheet.
+
+    --range <A1>       Required. A1 range (include sheet name like 'Sheet1'!F5:F5).
+    --value <text>     Single-cell value to write into the range top-left cell.
+    --json-file <p>    JSON file: array of arrays for multi-cell update.
+    --raw              Use valueInputOption=RAW (default: USER_ENTERED).
+    --json             Print API response as JSON.
+    """
+    range_notation = None
+    value = None
+    json_file = None
+    value_input_option = "USER_ENTERED"
+    for i, a in enumerate(args):
+        if a == "--range" and i + 1 < len(args):
+            range_notation = args[i + 1]
+        elif a == "--value" and i + 1 < len(args):
+            value = args[i + 1]
+        elif a == "--json-file" and i + 1 < len(args):
+            json_file = args[i + 1]
+        elif a == "--raw":
+            value_input_option = "RAW"
+
+    if not range_notation:
+        print("ERROR: --range <A1> is required (e.g. \"'Sheet1'!F5\")", file=sys.stderr)
+        sys.exit(2)
+    if value is None and json_file is None:
+        print("ERROR: one of --value or --json-file is required", file=sys.stderr)
+        sys.exit(2)
+
+    if json_file:
+        with open(json_file) as f:
+            values = json.load(f)
+    else:
+        values = [[value]]
+
+    sheets = get_sheets_service()
+    result = (
+        sheets.spreadsheets()
+        .values()
+        .update(
+            spreadsheetId=spreadsheet_id,
+            range=range_notation,
+            valueInputOption=value_input_option,
+            body={"values": values},
+        )
+        .execute()
+    )
+
+    if "--json" in args:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    print(f"Updated range: {result.get('updatedRange')}")
+    print(f"  updatedRows: {result.get('updatedRows')}")
+    print(f"  updatedCells: {result.get('updatedCells')}")
 
 
 # ---- Presentations (Slides) ---------------------------------------------
@@ -614,6 +748,10 @@ def usage():
   sheets-info <spreadsheet_id> [--json]       Show sheet names and dimensions
   sheets-read <spreadsheet_id> [--sheet <name>] [--range <A1>] [--json]
                                               Read cell values (tab-separated)
+  sheets-append <spreadsheet_id> --sheet <name> [--json-file <p>|--tsv-file <p>] [--raw] [--json]
+                                              Append rows to a sheet (input: array-of-arrays JSON or TSV)
+  sheets-update <spreadsheet_id> --range <A1> [--value <text>|--json-file <p>] [--raw] [--json]
+                                              Update specific cells (range must include sheet, e.g. "'Sheet1'!F5")
 
 === Google Slides ===
   slides-list [--limit N] [--json]            List recent presentations
@@ -670,6 +808,14 @@ def main():
         if len(sys.argv) < 3:
             usage()
         cmd_sheets_read(sys.argv[2], sys.argv[3:])
+    elif cmd == "sheets-append":
+        if len(sys.argv) < 3:
+            usage()
+        cmd_sheets_append(sys.argv[2], sys.argv[3:])
+    elif cmd == "sheets-update":
+        if len(sys.argv) < 3:
+            usage()
+        cmd_sheets_update(sys.argv[2], sys.argv[3:])
     # Slides
     elif cmd == "slides-list":
         cmd_slides_list(sys.argv[2:])
